@@ -30,19 +30,7 @@ GitHub mirror and release notes:
 - [GitHub Releases](https://github.com/memegeko/keskos/releases)
 
 ### Using the Download
-
-The release is published as a compressed `.iso.zst` file.
-
-On Linux:
-
-```bash
-unzstd keskos-2026.05.01-x86_64.iso.zst
-```
-
-On Windows:
-
-- extract it with `7-Zip`, `PeaZip`, or another archive tool with `.zst` support
-- this gives you `keskos-2026.05.01-x86_64.iso`
+- the Download on keskos.org guves you `keskos-2026.x.x-x86_64.iso`
 - flash that `.iso` with `Rufus`, `balenaEtcher`, or `Ventoy`
 
 ## About KeskOS
