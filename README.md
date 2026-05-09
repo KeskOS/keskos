@@ -17,17 +17,6 @@
 
 ## Current Release
 
-The current ISO release asset is:
-
-- `keskos-2026.05.01-x86_64.iso.zst`
-- Download size: about `1.9 GB`
-- Extracted ISO size: about `2.1 GB`
-- SHA-256:
-
-```text
-4b88553a0b39fc9567018b872881ac2bd093321787ec4429baba5859a8754b04
-```
-
 Primary download:
 
 - [download.keskos.org](https://download.keskos.org)
