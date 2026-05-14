@@ -30,7 +30,7 @@ GitHub mirror and release notes:
 - [GitHub Releases](https://github.com/memegeko/keskos/releases)
 
 ### Using the Download
-- the Download on keskos.org gives you `keskos-2026.x.x-x86_64.iso`
+- the Download on keskos.org gives you `keskos // layer x`
 - flash that `.iso` with `Rufus`, `balenaEtcher`, or `Ventoy`
 
 ## About KeskOS
