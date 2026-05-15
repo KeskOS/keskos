@@ -40,8 +40,10 @@ Repo source:
 
 - `configs/quickshell/keskos/`
 - `configs/plasma/keskos-bottom-panel.js`
-- `configs/plasmoids/com.keskos.launcherbutton/`
-- `configs/rofi/keskos.rasi`
+- `configs/plasma/layout-templates/org.keskos.plasma.defaultPanel/`
+- `configs/plasmoids/org.kde.plasma.simplekickoff/`
+- `docs/launcher-switching.md`
+- `docs/plasma-panel-layout.md`
 
 Installed source tree:
 
@@ -50,7 +52,12 @@ Installed source tree:
 
 Installed Plasma launcher widget:
 
-- `/usr/share/plasma/plasmoids/com.keskos.launcherbutton/`
+- `/usr/share/plasma/plasmoids/org.kde.plasma.simplekickoff/`
+
+Launcher switch helper:
+
+- `/usr/bin/keskos-launcher-switch`
+- `/usr/bin/keskos-reset-panel`
 
 Per-user live config:
 
@@ -99,7 +106,7 @@ The display watcher then:
 - creates or refreshes the managed Plasma bottom panel
 - pins the default taskbar launchers
 - configures four virtual desktops
-- keeps Meta wired to the existing launcher path
+- defaults the panel launcher to the patched `Kesk Kickoff` widget
 
 `keskos-shell` then:
 
@@ -112,9 +119,9 @@ The display watcher then:
 
 The bottom bar is now a real Plasma panel with:
 
-- `com.keskos.launcherbutton` on the far left
+- `org.kde.plasma.simplekickoff` on the far left by default
 - `org.kde.plasma.icontasks` as the real pinned/running app taskbar
-- `com.keskos.workspaceswitcher` on the far right
+- `com.keskos.workspaceswitcher` on the right side
 
 The panel setup script lives at:
 
@@ -122,15 +129,35 @@ The panel setup script lives at:
 
 It is applied through Plasma's scripting API, so the managed bottom taskbar is recreated only when it does not already match the KeskOS layout.
 
-## Wolfi Wiring
+If the patched Kesk launcher is unavailable for any reason, the panel falls back to:
 
-The existing launcher backend is still preserved.
+- `org.kde.plasma.kicker`
+- `org.kde.plasma.kickoff`
 
-- Meta still opens `keskos-launcher.desktop`
-- the KESK Plasma button runs `/usr/local/bin/keskos-launcher --mode main`
-- `keskos-launcher` toggles, so the same command opens on first click and closes on the second
+There is also a reusable Plasma layout template installed as:
 
-There is no second app menu and no Kickoff replacement in the bottom panel.
+- `/usr/share/plasma/layout-templates/org.keskos.plasma.defaultPanel/`
+
+See:
+
+- `docs/plasma-panel-layout.md`
+
+## Launcher Wiring
+
+The patched SimpleKickoff launcher is now the default launcher path.
+
+- Meta opens the Kesk launcher by default
+- Alt+F1 still triggers Plasma's standard launcher action
+
+To switch defaults:
+
+- `keskos-launcher-switch keskos`
+- `keskos-launcher-switch kde`
+- `keskos-launcher-switch status`
+
+See:
+
+- `docs/launcher-switching.md`
 
 ## Default Pinned Apps
 
@@ -141,7 +168,12 @@ The real task manager is pinned by default to:
 - LibreWolf if present, otherwise Firefox
 - System Settings
 
-If the custom KESK panel widget is unavailable for any reason, the panel script falls back to pinning `keskos-launcher.desktop` as the first launcher so the Wolfi path is still reachable.
+The KDE launcher favorites are also seeded with:
+
+- Konsole
+- Dolphin
+- the preferred browser
+- System Settings
 
 To change the default pinned apps, edit:
 
@@ -192,14 +224,10 @@ kquitapp6 plasmashell && kstart plasmashell
 To rebuild the managed bottom panel for the current user:
 
 ```bash
-rm -f ~/.config/plasma-org.kde.plasma.desktop-appletsrc
-rm -f ~/.config/plasmashellrc
-kquitapp6 plasmashell
-plasmashell --replace >/tmp/keskos-plasmashell.log 2>&1 &
-keskos-configure-user --force
+keskos-reset-panel
 ```
 
-If you only want to refresh the panel without deleting config:
+If you only want to refresh the panel logic without using the reset helper:
 
 ```bash
 kquitapp6 plasmashell
@@ -254,21 +282,24 @@ cat ~/.cache/keskos/session-start.log
 journalctl --user -xe
 ```
 
-Check launcher and shell processes:
+Check shell processes:
 
 ```bash
 pgrep -a quickshell
 pgrep -a eww
-pgrep -a wolfi
 ```
 
-The current Wolfi-style launcher backend is `keskos-launcher`, so `pgrep -a wolfi` may be empty on systems that only use the repo launcher path.
+Check launcher mode and switch defaults:
+
+```bash
+keskos-launcher-switch status
+keskos-launcher-switch kde
+```
 
 List and refresh Plasma applets:
 
 ```bash
 kpackagetool6 --type Plasma/Applet --list
-kpackagetool6 --type Plasma/Applet --upgrade /usr/local/share/keskos/source/configs/plasmoids/com.keskos.launcherbutton
 kbuildsycoca6
 ```
 
@@ -282,9 +313,8 @@ If the bottom taskbar does not appear:
 
 1. Restart `plasmashell`.
 2. Run `keskos-configure-user --force`.
-3. Check that `/usr/share/plasma/plasmoids/com.keskos.launcherbutton/` exists.
-4. Check that `/usr/share/plasma/plasmoids/com.keskos.workspaceswitcher/` exists.
-5. Confirm `~/.config/plasma-org.kde.plasma.desktop-appletsrc` contains both `keskosPanel=keskos-bottom-panel-v1` and `keskosPanel=keskos-top-reserve-v1`.
+3. Check that `/usr/share/plasma/plasmoids/com.keskos.workspaceswitcher/` exists.
+4. Confirm `~/.config/plasma-org.kde.plasma.desktop-appletsrc` contains both `keskosPanel=keskos-bottom-panel-v1` and `keskosPanel=keskos-top-reserve-v1`.
 
 If desktop icons still appear behind the top bar:
 

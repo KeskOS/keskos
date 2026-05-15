@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REQUEST="${1:-status}"
+TARGET_USER="${TARGET_USER:-}"
+TARGET_HOME=""
+SOURCE_ROOT="${SOURCE_ROOT:-}"
+CONFIGURE_USER_BIN=""
+
+resolve_target_user() {
+  if [[ -n "$TARGET_USER" ]]; then
+    return 0
+  fi
+
+  if [[ ${EUID} -eq 0 && -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+    TARGET_USER="${SUDO_USER}"
+  else
+    TARGET_USER="$(id -un)"
+  fi
+}
+
+resolve_target_home() {
+  TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+  if [[ -z "$TARGET_HOME" ]]; then
+    printf 'keskos-launcher-switch: could not resolve home directory for %s\n' "$TARGET_USER" >&2
+    exit 1
+  fi
+}
+
+resolve_source_root() {
+  local candidate=""
+
+  for candidate in \
+    "${SOURCE_ROOT:-}" \
+    "${TARGET_HOME}/.local/share/keskos/source" \
+    "$HOME/.local/share/keskos/source" \
+    "/usr/local/share/keskos/source" \
+    "/usr/share/keskos/source"
+  do
+    [[ -n "$candidate" ]] || continue
+    if [[ -d "$candidate/configs" ]]; then
+      SOURCE_ROOT="$candidate"
+      return 0
+    fi
+  done
+
+  printf 'keskos-launcher-switch: could not locate a KeskOS source tree\n' >&2
+  exit 1
+}
+
+resolve_configure_user_bin() {
+  local candidate=""
+
+  for candidate in \
+    "$HOME/.local/bin/keskos-configure-user" \
+    "/usr/local/bin/keskos-configure-user" \
+    "/usr/bin/keskos-configure-user"
+  do
+    if [[ -x "$candidate" ]]; then
+      CONFIGURE_USER_BIN="$candidate"
+      return 0
+    fi
+  done
+
+  printf 'keskos-launcher-switch: could not find keskos-configure-user\n' >&2
+  exit 1
+}
+
+launcher_mode_file() {
+  printf '%s\n' "$TARGET_HOME/.config/keskos/launcher-mode"
+}
+
+current_mode() {
+  local mode_file
+  local mode=""
+
+  mode_file="$(launcher_mode_file)"
+  if [[ -f "$mode_file" ]]; then
+    mode="$(head -n 1 "$mode_file" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  fi
+
+  case "$mode" in
+    keskos)
+      printf 'keskos\n'
+      ;;
+    kde)
+      printf 'kde\n'
+      ;;
+    *)
+      printf 'keskos\n'
+      ;;
+  esac
+}
+
+display_mode_name() {
+  case "$1" in
+    keskos)
+      printf 'keskos\n'
+      ;;
+    *)
+      printf 'kde\n'
+      ;;
+  esac
+}
+
+backup_configs() {
+  if [[ "${KESKOS_SKIP_LAUNCHER_BACKUP:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  local timestamp
+  local backup_root
+  local path=""
+  local files=(
+    "$TARGET_HOME/.config/kglobalshortcutsrc"
+    "$TARGET_HOME/.config/kwinrc"
+    "$TARGET_HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
+    "$TARGET_HOME/.config/plasmashellrc"
+    "$TARGET_HOME/.config/keskos/launcher-mode"
+  )
+
+  timestamp="$(date +%Y%m%d-%H%M%S)"
+  backup_root="$TARGET_HOME/.config/keskos/backups/plasma-launcher-before-kde-switch/$timestamp"
+  mkdir -p "$backup_root"
+
+  for path in "${files[@]}"; do
+    [[ -e "$path" ]] || continue
+    cp -a "$path" "$backup_root/"
+  done
+
+  if [[ ${EUID} -eq 0 ]]; then
+    chown -R "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.config/keskos/backups"
+  fi
+}
+
+write_mode() {
+  local mode="$1"
+  local mode_file
+
+  mode_file="$(launcher_mode_file)"
+  mkdir -p "$(dirname "$mode_file")"
+  printf '%s\n' "$mode" >"$mode_file"
+
+  if [[ ${EUID} -eq 0 ]]; then
+    chown "$TARGET_USER:$TARGET_USER" "$mode_file"
+  fi
+}
+
+apply_mode() {
+  local mode="$1"
+
+  backup_configs
+  write_mode "$mode"
+  SOURCE_ROOT="$SOURCE_ROOT" "$CONFIGURE_USER_BIN" --user "$TARGET_USER" --force
+  printf 'Current default launcher: %s\n' "$(display_mode_name "$mode")"
+}
+
+main() {
+  resolve_target_user
+  resolve_target_home
+
+  case "$REQUEST" in
+    status)
+      printf 'Current default launcher: %s\n' "$(current_mode)"
+      ;;
+    keskos|kde)
+      resolve_source_root
+      resolve_configure_user_bin
+      apply_mode "$REQUEST"
+      ;;
+    *)
+      printf 'Usage: keskos-launcher-switch {keskos|kde|status}\n' >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

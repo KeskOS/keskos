@@ -1,13 +1,15 @@
 const MARKER = "keskos-bottom-panel-v1";
 const TOP_RESERVE_MARKER = "keskos-top-reserve-v1";
-const LAUNCHER_WIDGET = "com.keskos.launcherbutton";
+const KESKOS_LAUNCHER_WIDGET = "org.kde.plasma.simplekickoff";
+const KICKOFF_WIDGET = "org.kde.plasma.kickoff";
+const KICKER_WIDGET = "org.kde.plasma.kicker";
 const TASKS_WIDGET = "org.kde.plasma.icontasks";
-const CLIPBOARD_WIDGET = "org.kde.plasma.clipboard";
 const WORKSPACE_WIDGET = "com.keskos.workspaceswitcher";
 const LEGACY_PAGER_WIDGETS = ["org.kde.plasma.pager", "org.kde.plasma.activitypager"];
 const WORKSPACE_WIDGET_CANDIDATES = [WORKSPACE_WIDGET].concat(LEGACY_PAGER_WIDGETS);
 const BOTTOM_PANEL_HEIGHT = 48;
-const WOLFI_TOGGLE_COMMAND = "bash -lc 'if [ -x \"$HOME/.local/bin/keskos-toggle-wolfi\" ]; then exec \"$HOME/.local/bin/keskos-toggle-wolfi\"; elif [ -x /usr/bin/keskos-toggle-wolfi ]; then exec /usr/bin/keskos-toggle-wolfi; elif [ -x /usr/local/bin/keskos-toggle-wolfi ]; then exec /usr/local/bin/keskos-toggle-wolfi; elif [ -x \"$HOME/.local/bin/keskos-launcher\" ]; then exec \"$HOME/.local/bin/keskos-launcher\" --mode main; elif [ -x /usr/local/bin/keskos-launcher ]; then exec /usr/local/bin/keskos-launcher --mode main; elif [ -x /usr/bin/keskos-launcher ]; then exec /usr/bin/keskos-launcher --mode main; else exit 1; fi'";
+const DEFAULT_LAUNCHER_MODE = "keskos";
+const CUSTOM_LAUNCHER_ICON = "keskos-launcher";
 
 function arrayHas(items, value) {
     return items && items.indexOf(value) !== -1;
@@ -46,8 +48,24 @@ function resolveFilesDesktopId() {
 }
 
 function resolveSettingsDesktopId() {
-    return firstExistingDesktopId(["systemsettings.desktop", "kdesystemsettings.desktop"])
+    return firstExistingDesktopId(["org.kde.systemsettings.desktop", "systemsettings.desktop", "kdesystemsettings.desktop"])
         || "systemsettings.desktop";
+}
+
+function resolvePanelTerminalDesktopId() {
+    return firstExistingDesktopId(["keskos-terminal.desktop"]) || resolveTerminalDesktopId();
+}
+
+function resolvePanelFilesDesktopId() {
+    return firstExistingDesktopId(["keskos-files.desktop"]) || resolveFilesDesktopId();
+}
+
+function resolvePanelBrowserDesktopId() {
+    return firstExistingDesktopId(["keskos-browser.desktop"]) || resolveBrowserDesktopId();
+}
+
+function resolvePanelSettingsDesktopId() {
+    return firstExistingDesktopId(["keskos-settings.desktop"]) || resolveSettingsDesktopId();
 }
 
 function resolveWorkspaceWidgetType() {
@@ -58,6 +76,36 @@ function resolveWorkspaceWidgetType() {
     }
 
     return WORKSPACE_WIDGET;
+}
+
+function resolveLauncherMode() {
+    if (DEFAULT_LAUNCHER_MODE === "keskos" && widgetAvailable(KESKOS_LAUNCHER_WIDGET)) {
+        return "keskos";
+    }
+
+    return "kde";
+}
+
+function resolveNativeLauncherWidgetType() {
+    if (widgetAvailable(KICKER_WIDGET)) {
+        return KICKER_WIDGET;
+    }
+
+    if (widgetAvailable(KICKOFF_WIDGET)) {
+        return KICKOFF_WIDGET;
+    }
+
+    return "";
+}
+
+function resolveLauncherWidgetType() {
+    const launcherMode = resolveLauncherMode();
+
+    if (launcherMode === "keskos" && widgetAvailable(KESKOS_LAUNCHER_WIDGET)) {
+        return KESKOS_LAUNCHER_WIDGET;
+    }
+
+    return resolveNativeLauncherWidgetType();
 }
 
 function unique(items) {
@@ -81,17 +129,13 @@ function asLauncher(desktopId) {
     return desktopId ? "applications:" + desktopId : "";
 }
 
-function defaultLaunchers(includeLauncherDesktop) {
+function defaultLaunchers() {
     const launchers = [];
 
-    if (includeLauncherDesktop) {
-        launchers.push(asLauncher("keskos-launcher.desktop"));
-    }
-
-    launchers.push(asLauncher(resolveTerminalDesktopId()));
-    launchers.push(asLauncher(resolveFilesDesktopId()));
-    launchers.push(asLauncher(resolveBrowserDesktopId()));
-    launchers.push(asLauncher(resolveSettingsDesktopId()));
+    launchers.push(asLauncher(resolvePanelTerminalDesktopId()));
+    launchers.push(asLauncher(resolvePanelFilesDesktopId()));
+    launchers.push(asLauncher(resolvePanelBrowserDesktopId()));
+    launchers.push(asLauncher(resolvePanelSettingsDesktopId()));
 
     return unique(launchers);
 }
@@ -111,12 +155,68 @@ function findManagedPanel(marker) {
     return null;
 }
 
-function removeExistingPanels() {
+function removeDuplicateManagedPanels(marker, keepPanel) {
     const panelList = panels();
 
     for (let i = 0; i < panelList.length; ++i) {
+        const panel = panelList[i];
+        panel.currentConfigGroup = new Array("General");
+
+        if (panel.readConfig("keskosPanel", "") !== marker) {
+            continue;
+        }
+
+        if (keepPanel && panel.id === keepPanel.id) {
+            continue;
+        }
+
         try {
-            panelList[i].remove();
+            panel.remove();
+        } catch (error) {
+        }
+    }
+}
+
+function panelMarker(panel) {
+    panel.currentConfigGroup = new Array("General");
+    return panel.readConfig("keskosPanel", "");
+}
+
+function isBottomPanel(panel) {
+    try {
+        if (panel.location === "bottom") {
+            return true;
+        }
+    } catch (error) {
+    }
+
+    return false;
+}
+
+function removeConflictingBottomPanels(keepPanel) {
+    const panelList = panels();
+
+    for (let i = 0; i < panelList.length; ++i) {
+        const panel = panelList[i];
+
+        if (keepPanel && panel.id === keepPanel.id) {
+            continue;
+        }
+
+        if (panelMarker(panel) === MARKER || panelMarker(panel) === TOP_RESERVE_MARKER) {
+            continue;
+        }
+
+        if (panel.screen !== 0) {
+            continue;
+        }
+
+        if (!isBottomPanel(panel)) {
+            continue;
+        }
+
+        try {
+            panel.remove();
         } catch (error) {
         }
     }
@@ -124,10 +224,6 @@ function removeExistingPanels() {
 
 function panelNeedsReset(panel) {
     if (!panel) {
-        return true;
-    }
-
-    if (panels().length !== 1) {
         return true;
     }
 
@@ -181,20 +277,99 @@ function removeManagedPanel(marker) {
     }
 }
 
-function configureLauncher(widget) {
+function configureKdeLauncher(widget) {
     if (!widget) {
         return;
     }
 
+    const favorites = unique([
+        resolveTerminalDesktopId(),
+        resolveFilesDesktopId(),
+        resolveBrowserDesktopId(),
+        resolveSettingsDesktopId()
+    ]);
+
     widget.currentConfigGroup = new Array("General");
-    widget.writeConfig("label", "KeskOS Launcher");
-    widget.writeConfig("command", WOLFI_TOGGLE_COMMAND);
+    widget.writeConfig("icon", CUSTOM_LAUNCHER_ICON);
+    widget.writeConfig("useCustomButtonImage", false);
+    widget.writeConfig("customButtonImage", "");
+    widget.writeConfig("menuLabel", "");
+    widget.writeConfig("favoriteApps", favorites.join(","));
+    widget.writeConfig("favoriteSystemActions", "logout,reboot,shutdown");
+
+    if (widget.type === KICKER_WIDGET) {
+        widget.writeConfig("showRecentApps", false);
+        widget.writeConfig("showRecentDocs", false);
+        widget.writeConfig("showRecentContacts", false);
+        widget.writeConfig("showPowerSession", true);
+        widget.writeConfig("useExtraRunners", false);
+        widget.writeConfig("switchTabsOnHover", false);
+    } else if (widget.type === KICKOFF_WIDGET) {
+        widget.writeConfig("showRecentApps", false);
+        widget.writeConfig("showRecentDocs", false);
+        widget.writeConfig("showRecentContacts", false);
+        widget.writeConfig("useExtraRunners", false);
+    }
+
     widget.reloadConfig();
 }
 
-function configureTasks(widget, includeLauncherDesktop) {
+function configureKeskosLauncher(widget) {
+    if (!widget) {
+        return;
+    }
+
+    const favorites = unique([
+        resolveTerminalDesktopId(),
+        resolveFilesDesktopId(),
+        resolveSettingsDesktopId(),
+        "preferred://browser"
+    ]).filter(function(entry) {
+        return entry && entry.length > 0;
+    });
+
     widget.currentConfigGroup = new Array("General");
-    widget.writeConfig("launchers", defaultLaunchers(includeLauncherDesktop).join(","));
+    widget.writeConfig("icon", CUSTOM_LAUNCHER_ICON);
+    widget.writeConfig("useCustomButtonImage", false);
+    widget.writeConfig("customButtonImage", "");
+    widget.writeConfig("menuLabel", "");
+    widget.writeConfig("favorites", favorites);
+    widget.writeConfig("systemFavorites", ["suspend", "reboot", "shutdown", "logout"]);
+    widget.writeConfig("primaryActions", 3);
+    widget.writeConfig("paneSwap", false);
+    widget.writeConfig("favoritesDisplay", 0);
+    widget.writeConfig("applicationsDisplay", 0);
+    widget.writeConfig("alphaSort", false);
+    widget.writeConfig("showActionButtonCaptions", false);
+    widget.writeConfig("compactMode", true);
+    widget.writeConfig("pin", false);
+
+    widget.reloadConfig();
+}
+
+function configureTasks(widget) {
+    widget.currentConfigGroup = new Array("General");
+    const launcherDesktopId = asLauncher("keskos-launcher.desktop");
+    const existingLaunchers = widget.readConfig("launchers", "");
+    const currentLaunchers = existingLaunchers
+        ? existingLaunchers.split(",").map(function(entry) {
+            return entry.trim();
+        }).filter(function(entry) {
+            return entry.length > 0;
+        })
+        : [];
+
+    let updatedLaunchers = currentLaunchers.filter(function(entry) {
+        return entry !== launcherDesktopId;
+    });
+
+    if (!updatedLaunchers.length) {
+        updatedLaunchers = defaultLaunchers();
+    }
+
+    if (updatedLaunchers.join(",") !== currentLaunchers.join(",")) {
+        widget.writeConfig("launchers", unique(updatedLaunchers).join(","));
+    }
     widget.writeConfig("fill", true);
     widget.writeConfig("iconSpacing", 0);
     widget.writeConfig("indicateAudioStreams", false);
@@ -212,6 +387,9 @@ function configurePager(widget) {
 }
 
 function configurePanel(panel) {
+    const launcherMode = resolveLauncherMode();
+    const launcherType = resolveLauncherWidgetType();
+
     try {
         panel.screen = 0;
     } catch (error) {
@@ -241,24 +419,19 @@ function configurePanel(panel) {
     panel.writeConfig("keskosPanel", MARKER);
 
     let launcher = null;
-    if (widgetAvailable(LAUNCHER_WIDGET)) {
-        launcher = findWidget(panel, [LAUNCHER_WIDGET]);
+    if (launcherType) {
+        removeWidgets(panel, [KESKOS_LAUNCHER_WIDGET, KICKOFF_WIDGET, KICKER_WIDGET].filter(function(widgetType) {
+            return widgetType !== launcherType;
+        }));
+        launcher = findWidget(panel, [launcherType]);
         if (!launcher) {
-            launcher = panel.addWidget(LAUNCHER_WIDGET);
+            launcher = panel.addWidget(launcherType);
         }
     }
 
     let tasks = findWidget(panel, [TASKS_WIDGET]);
     if (!tasks) {
         tasks = panel.addWidget(TASKS_WIDGET);
-    }
-
-    let clipboard = null;
-    if (widgetAvailable(CLIPBOARD_WIDGET)) {
-        clipboard = findWidget(panel, [CLIPBOARD_WIDGET]);
-        if (!clipboard) {
-            clipboard = panel.addWidget(CLIPBOARD_WIDGET);
-        }
     }
 
     const workspaceType = resolveWorkspaceWidgetType();
@@ -276,23 +449,21 @@ function configurePanel(panel) {
             workspaceWidget = panel.addWidget(workspaceType);
         }
     }
+    removeWidgets(panel, ["org.kde.plasma.clipboard", "org.kde.plasma.systemtray", "org.kde.plasma.digitalclock"]);
 
     if (launcher) {
         launcher.index = 0;
     }
 
     tasks.index = launcher ? 1 : 0;
-    if (clipboard) {
-        clipboard.index = launcher ? 2 : 1;
-    }
-    workspaceWidget.index = launcher ? 3 : 2;
+    workspaceWidget.index = launcher ? 2 : 1;
 
-    configureLauncher(launcher);
-    configureTasks(tasks, !launcher);
-    if (clipboard) {
-        clipboard.currentConfigGroup = new Array("General");
-        clipboard.reloadConfig();
+    if (launcher && launcher.type === KESKOS_LAUNCHER_WIDGET) {
+        configureKeskosLauncher(launcher);
+    } else {
+        configureKdeLauncher(launcher);
     }
+    configureTasks(tasks);
     configurePager(workspaceWidget);
 
     const appletOrder = [];
@@ -300,9 +471,6 @@ function configurePanel(panel) {
         appletOrder.push(String(launcher.id));
     }
     appletOrder.push(String(tasks.id));
-    if (clipboard) {
-        appletOrder.push(String(clipboard.id));
-    }
     appletOrder.push(String(workspaceWidget.id));
 
     panel.currentConfigGroup = new Array("General");
@@ -315,8 +483,10 @@ removeManagedPanel(TOP_RESERVE_MARKER);
 let panel = findManagedPanel(MARKER);
 
 if (panelNeedsReset(panel)) {
-    removeExistingPanels();
+    removeDuplicateManagedPanels(MARKER, null);
     panel = new Panel;
 }
 
+removeDuplicateManagedPanels(MARKER, panel);
+removeConflictingBottomPanels(panel);
 configurePanel(panel);

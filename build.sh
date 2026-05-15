@@ -14,7 +14,7 @@ AUR_PKGDEST="${SAFE_BUILD_ROOT}/pkgdest"
 GNUPG_BUILD_HOME="${SAFE_BUILD_ROOT}/gnupg"
 SOURCE_DATE="${SOURCE_DATE_EPOCH:-$(date +%s)}"
 ISO_VERSION="${KESKOS_ISO_VERSION:-$(date --date="@${SOURCE_DATE}" +%Y.%m.%d)}"
-AUR_PACKAGES=(calamares kdotool-bin librewolf-bin zen-browser-bin brave-bin)
+AUR_PACKAGES=(calamares librewolf-bin zen-browser-bin brave-bin)
 SKIP_PGP_FALLBACK_PACKAGES=(librewolf-bin zen-browser-bin brave-bin)
 
 log() {
@@ -167,6 +167,74 @@ import_pkgbuild_keys() {
   done
 }
 
+zen_latest_release_tag() {
+  local asset_name="$1"
+  local location=""
+
+  location="$(
+    curl -fsSI "https://github.com/zen-browser/desktop/releases/latest/download/${asset_name}" \
+      | tr -d '\r' \
+      | awk -F': ' 'tolower($1) == "location" { print $2; exit }'
+  )"
+
+  [[ -n "$location" ]] || fail "Could not resolve the latest Zen Browser release redirect for ${asset_name}."
+
+  printf '%s\n' "$location" | sed -E 's#^.*/releases/download/([^/]+)/.*#\1#'
+}
+
+zen_release_sha256() {
+  local url="$1"
+  curl -fsSL "$url" | sha256sum | awk '{print $1}'
+}
+
+patch_zen_browser_pkgbuild() {
+  local package_dir="$1"
+  local latest_tag=""
+  local x86_url=""
+  local aarch64_url=""
+  local x86_sha=""
+  local aarch64_sha=""
+
+  latest_tag="$(zen_latest_release_tag "zen.linux-x86_64.tar.xz")"
+  x86_url="https://github.com/zen-browser/desktop/releases/download/${latest_tag}/zen.linux-x86_64.tar.xz"
+  aarch64_url="https://github.com/zen-browser/desktop/releases/download/${latest_tag}/zen.linux-aarch64.tar.xz"
+
+  log "Patching zen-browser-bin PKGBUILD to use live Zen release ${latest_tag}."
+
+  x86_sha="$(zen_release_sha256 "$x86_url")"
+  aarch64_sha="$(zen_release_sha256 "$aarch64_url")"
+
+  python3 - "$package_dir/PKGBUILD" "$latest_tag" "$x86_url" "$aarch64_url" "$x86_sha" "$aarch64_sha" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+latest_tag = sys.argv[2]
+x86_url = sys.argv[3]
+aarch64_url = sys.argv[4]
+x86_sha = sys.argv[5]
+aarch64_sha = sys.argv[6]
+
+text = path.read_text(encoding="utf-8")
+
+patterns = {
+    r'^pkgver=.*$': f'pkgver={latest_tag}',
+    r'^source_x86_64=\(.*\)$': f'source_x86_64=("zen-browser-$pkgver-$pkgrel-x86_64.tar.xz::{x86_url}")',
+    r'^source_aarch64=\(.*\)$': f'source_aarch64=("zen-browser-$pkgver-$pkgrel-aarch64.tar.xz::{aarch64_url}")',
+    r"^sha256sums_x86_64=\('.*'\)$": f"sha256sums_x86_64=('{x86_sha}')",
+    r"^sha256sums_aarch64=\('.*'\)$": f"sha256sums_aarch64=('{aarch64_sha}')",
+}
+
+for pattern, replacement in patterns.items():
+    text, count = re.subn(pattern, replacement, text, flags=re.MULTILINE)
+    if count != 1:
+        raise SystemExit(f"Failed to patch zen-browser-bin PKGBUILD pattern: {pattern}")
+
+path.write_text(text, encoding="utf-8")
+PY
+}
+
 build_aur_package() {
   local package_name="$1"
   local package_dir="${AUR_BUILD_ROOT}/${package_name}"
@@ -201,6 +269,10 @@ if snippet not in text:
     text = text.replace(marker, snippet + marker, 1)
 path.write_text(text, encoding="utf-8")
 PY
+  fi
+
+  if [[ "$package_name" == "zen-browser-bin" ]]; then
+    patch_zen_browser_pkgbuild "$package_dir"
   fi
 
   log "Building ${package_name} for the local ISO repository..."
@@ -254,7 +326,6 @@ stage_source_tree() {
   cp -a "${REPO_ROOT}/assets" "$source_root/"
   cp -a "${REPO_ROOT}/calamares" "$source_root/"
   cp -a "${REPO_ROOT}/configs" "$source_root/"
-  cp -a "${REPO_ROOT}/launcher" "$source_root/"
   cp -a "${REPO_ROOT}/desktop" "$source_root/"
   cp -a "${REPO_ROOT}/browser-home" "$source_root/"
   cp -a "${REPO_ROOT}/docs" "$source_root/"
@@ -273,16 +344,23 @@ stage_live_system_assets() {
     "${root}/etc/calamares/modules"
 
   mkdir -p \
+    "${root}/usr/bin" \
     "${root}/usr/share/konsole" \
     "${root}/usr/share/color-schemes" \
+    "${root}/usr/share/icons/hicolor/48x48/apps" \
+    "${root}/usr/share/icons/hicolor/64x64/apps" \
+    "${root}/usr/share/icons/hicolor/128x128/apps" \
+    "${root}/usr/share/plasma/desktoptheme" \
     "${root}/usr/share/aurorae/themes" \
     "${root}/usr/share/kwin/decorations" \
     "${root}/usr/share/backgrounds/keskos" \
     "${root}/usr/share/plasma/plasmoids" \
+    "${root}/usr/share/plasma/layout-templates" \
     "${root}/usr/share/plasma/look-and-feel/com.keskos.desktop" \
     "${root}/usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen/assets" \
     "${root}/usr/share/sddm/themes/keskos/assets" \
     "${root}/usr/share/keskos/browser-home" \
+    "${root}/usr/share/keskos/panel-icons" \
     "${root}/usr/share/keskos/startpage" \
     "${root}/usr/share/calamares/branding/keskos" \
     "${root}/etc/calamares/modules"
@@ -290,6 +368,7 @@ stage_live_system_assets() {
   install -m 644 "${REPO_ROOT}/configs/konsole/KeskOS.colorscheme" "${root}/usr/share/konsole/KeskOS.colorscheme"
   install -m 644 "${REPO_ROOT}/configs/konsole/KeskOS.profile" "${root}/usr/share/konsole/KeskOS.profile"
   install -m 644 "${REPO_ROOT}/configs/kde/keskos.colors" "${root}/usr/share/color-schemes/KESKOS.colors"
+  cp -a "${REPO_ROOT}/configs/plasma/desktoptheme/keskos-shell" "${root}/usr/share/plasma/desktoptheme/"
   cp -a "${REPO_ROOT}/configs/aurorae/themes/KeskOS-SPLIT" "${root}/usr/share/aurorae/themes/"
   cp -a "${REPO_ROOT}/configs/kwin/decorations/kwin4_decoration_qml_keskos_split" "${root}/usr/share/kwin/decorations/"
 
@@ -300,8 +379,16 @@ stage_live_system_assets() {
   install -m 644 "${REPO_ROOT}/assets/wallpaper-4096x2160.png" "${root}/usr/share/backgrounds/keskos/wallpaper-4096x2160.png"
   install -m 644 "${REPO_ROOT}/assets/kesk_os_logo_text.png" "${root}/usr/share/backgrounds/keskos/kesk_os_logo_text.png"
 
-  cp -a "${REPO_ROOT}/configs/plasmoids/com.keskos.launcherbutton" "${root}/usr/share/plasma/plasmoids/"
+  install -m 644 "${REPO_ROOT}/assets/icons/hicolor/48x48/apps/keskos-launcher.png" "${root}/usr/share/icons/hicolor/48x48/apps/keskos-launcher.png"
+  install -m 644 "${REPO_ROOT}/assets/icons/hicolor/64x64/apps/keskos-launcher.png" "${root}/usr/share/icons/hicolor/64x64/apps/keskos-launcher.png"
+  install -m 644 "${REPO_ROOT}/assets/icons/hicolor/128x128/apps/keskos-launcher.png" "${root}/usr/share/icons/hicolor/128x128/apps/keskos-launcher.png"
+  install -m 644 "${REPO_ROOT}/assets/panel-icons/browser.svg" "${root}/usr/share/keskos/panel-icons/browser.svg"
+  install -m 644 "${REPO_ROOT}/assets/panel-icons/folder.svg" "${root}/usr/share/keskos/panel-icons/folder.svg"
+  install -m 644 "${REPO_ROOT}/assets/panel-icons/settings.svg" "${root}/usr/share/keskos/panel-icons/settings.svg"
+  install -m 644 "${REPO_ROOT}/assets/panel-icons/terminal.svg" "${root}/usr/share/keskos/panel-icons/terminal.svg"
+  cp -a "${REPO_ROOT}/configs/plasmoids/org.kde.plasma.simplekickoff" "${root}/usr/share/plasma/plasmoids/"
   cp -a "${REPO_ROOT}/configs/plasmoids/com.keskos.workspaceswitcher" "${root}/usr/share/plasma/plasmoids/"
+  cp -a "${REPO_ROOT}/configs/plasma/layout-templates/org.keskos.plasma.defaultPanel" "${root}/usr/share/plasma/layout-templates/"
   cp -a "${REPO_ROOT}/configs/look-and-feel/com.keskos.desktop/." "${root}/usr/share/plasma/look-and-feel/com.keskos.desktop/"
   install -m 644 "${REPO_ROOT}/configs/look-and-feel/com.keskos.desktop/contents/lockscreen/assets/background.png" "${root}/usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen/assets/background.png"
   install -m 644 "${REPO_ROOT}/configs/look-and-feel/com.keskos.desktop/contents/lockscreen/assets/logo.png" "${root}/usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen/assets/logo.png"

@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Legacy systems. Modern workflows.</strong><br>
-  An Arch-based KDE Plasma operating system with a dark industrial console style, a custom command launcher, and a fully themed live installer..
+  An Arch-based KDE Plasma operating system with a dark industrial console style, a patched KDE Plasma launcher, and a fully themed live installer.
 </p>
 
 ## Websites
@@ -41,7 +41,8 @@ It is meant to feel like a complete product instead of a loose rice script:
 
 - a real live ISO you can boot and test before installing
 - a dark industrial orange-on-black desktop style
-- a custom `KESK` command layer for launching apps, files, settings, web, windows, and power actions
+- a patched `Kesk Kickoff` launcher integrated into Plasma
+- a branded KeskOS default bottom panel with launcher, pinned apps, and workspace switching
 - a themed terminal, browser home page, login stack, lock screen, splash screen, and installer
 - a custom window decoration theme built for the rest of the OS look
 - a desktop that stays visually consistent across the live session and installed system
@@ -49,6 +50,10 @@ It is meant to feel like a complete product instead of a loose rice script:
 Project planning and active work are tracked in:
 
 - [ROADMAP.md](ROADMAP.md)
+- [docs/repository-structure.md](docs/repository-structure.md)
+- [docs/launcher-switching.md](docs/launcher-switching.md)
+- [docs/plasma-panel-layout.md](docs/plasma-panel-layout.md)
+- [docs/keybinds.md](docs/keybinds.md)
 
 ## Main Features
 
@@ -81,7 +86,8 @@ KeskOS installs through Calamares with a custom visual style and standard guided
 The installed system carries over the visual identity:
 
 - custom orange console look
-- `KESK` launcher shortcuts
+- patched `Kesk Kickoff` launcher with KeskOS branding
+- branded bottom panel with launcher, pinned apps, and workspace switcher
 - custom Konsole profile
 - custom browser home page
 - browser selection during install
@@ -159,7 +165,8 @@ KeskOS currently ships with these major pieces:
 - Arch Linux base
 - KDE Plasma desktop
 - Calamares installer
-- `rofi`-based `KESK` launcher
+- patched `Kesk Kickoff` launcher
+- KeskOS default panel layout template and reset tooling
 - Konsole
 - Dolphin
 - browser selection flow for LibreWolf, Zen Browser, or Brave

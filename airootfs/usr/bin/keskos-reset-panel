@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TARGET_USER="${TARGET_USER:-}"
+TARGET_HOME=""
+CONFIGURE_USER_BIN=""
+SOURCE_ROOT="${SOURCE_ROOT:-}"
+TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+BACKUP_ROOT=""
+
+resolve_target_user() {
+  if [[ -n "$TARGET_USER" ]]; then
+    return 0
+  fi
+
+  if [[ ${EUID} -eq 0 && -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+    TARGET_USER="${SUDO_USER}"
+  else
+    TARGET_USER="$(id -un)"
+  fi
+}
+
+resolve_target_home() {
+  TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+  if [[ -z "$TARGET_HOME" ]]; then
+    printf 'keskos-reset-panel: could not resolve home directory for %s\n' "$TARGET_USER" >&2
+    exit 1
+  fi
+}
+
+resolve_source_root() {
+  local candidate=""
+
+  for candidate in \
+    "${SOURCE_ROOT:-}" \
+    "${TARGET_HOME}/.local/share/keskos/source" \
+    "$HOME/.local/share/keskos/source" \
+    "/usr/local/share/keskos/source" \
+    "/usr/share/keskos/source"
+  do
+    [[ -n "$candidate" ]] || continue
+    if [[ -d "$candidate/configs" ]]; then
+      SOURCE_ROOT="$candidate"
+      return 0
+    fi
+  done
+
+  printf 'keskos-reset-panel: could not locate a KeskOS source tree\n' >&2
+  exit 1
+}
+
+resolve_configure_user_bin() {
+  local candidate=""
+
+  for candidate in \
+    "$HOME/.local/bin/keskos-configure-user" \
+    "/usr/local/bin/keskos-configure-user" \
+    "/usr/bin/keskos-configure-user"
+  do
+    if [[ -x "$candidate" ]]; then
+      CONFIGURE_USER_BIN="$candidate"
+      return 0
+    fi
+  done
+
+  printf 'keskos-reset-panel: could not find keskos-configure-user\n' >&2
+  exit 1
+}
+
+backup_configs() {
+  local path=""
+  local files=(
+    "$TARGET_HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
+    "$TARGET_HOME/.config/plasmashellrc"
+    "$TARGET_HOME/.config/kglobalshortcutsrc"
+    "$TARGET_HOME/.config/kwinrc"
+    "$TARGET_HOME/.config/keskos/launcher-mode"
+  )
+
+  BACKUP_ROOT="$TARGET_HOME/.config/keskos/backups/plasma-panel-$TIMESTAMP"
+  mkdir -p "$BACKUP_ROOT"
+
+  for path in "${files[@]}"; do
+    [[ -e "$path" ]] || continue
+    cp -a "$path" "$BACKUP_ROOT/"
+  done
+
+  if [[ ${EUID} -eq 0 ]]; then
+    chown -R "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.config/keskos/backups"
+  fi
+}
+
+reload_plasma() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user restart plasma-plasmashell.service >/dev/null 2>&1 && return 0
+  fi
+
+  if command -v kquitapp6 >/dev/null 2>&1; then
+    kquitapp6 plasmashell >/dev/null 2>&1 || true
+  elif command -v kquitapp5 >/dev/null 2>&1; then
+    kquitapp5 plasmashell >/dev/null 2>&1 || true
+  fi
+
+  if command -v plasmashell >/dev/null 2>&1; then
+    nohup plasmashell --replace >/tmp/keskos-plasmashell.log 2>&1 &
+  fi
+}
+
+main() {
+  resolve_target_user
+  resolve_target_home
+  resolve_source_root
+  resolve_configure_user_bin
+  backup_configs
+  reload_plasma
+  sleep 1
+  SOURCE_ROOT="$SOURCE_ROOT" "$CONFIGURE_USER_BIN" --user "$TARGET_USER" --force
+  reload_plasma
+  printf 'KeskOS default panel applied. Backup: %s\n' "$BACKUP_ROOT"
+}
+
+main "$@"

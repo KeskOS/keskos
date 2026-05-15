@@ -1,0 +1,18 @@
+{
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "support@keskos.org",
+                "Name": "KeskOS"
+            }
+        ],
+        "Category": "",
+        "Description": "KeskOS Plasma shell theme with black panel backgrounds and orange console accents.",
+        "EnabledByDefault": true,
+        "Id": "keskos-shell",
+        "License": "GPL-3.0-or-later",
+        "Name": "KeskOS Shell",
+        "Version": "1.0"
+    },
+    "X-Plasma-API": "5.0"
+}

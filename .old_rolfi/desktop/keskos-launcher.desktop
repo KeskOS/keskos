@@ -1,11 +1,12 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=KESKOS Launcher
-Comment=Open the KESKOS command layer
+Name=Wolfi Launcher
+GenericName=KESKOS Launcher
+Comment=KeskOS custom launcher fallback
 Exec=/usr/bin/keskos-toggle-wolfi
-Icon=utilities-terminal
+Icon=keskos-launcher
 Terminal=false
 StartupNotify=false
 Categories=Utility;System;
-X-KDE-Shortcuts=Meta+K
+X-KDE-Shortcuts=Meta+W

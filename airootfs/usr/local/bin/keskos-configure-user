@@ -11,6 +11,7 @@ FEATURE_QUICKSHELL_TOPBAR=1
 FEATURE_KDE_BOTTOM_TASKBAR=1
 FEATURE_PLASMA_THEME=1
 FEATURE_WINDOW_BORDERS=1
+LAUNCHER_MODE="${LAUNCHER_MODE:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -126,6 +127,34 @@ resolve_install_choices() {
   FEATURE_KDE_BOTTOM_TASKBAR="$("$jq_bin" -r 'if .features.kde_bottom_taskbar == false then 0 else 1 end' "$INSTALL_CHOICES_FILE" 2>/dev/null || printf '1\n')"
   FEATURE_PLASMA_THEME="$("$jq_bin" -r 'if .features.plasma_theme == false then 0 else 1 end' "$INSTALL_CHOICES_FILE" 2>/dev/null || printf '1\n')"
   FEATURE_WINDOW_BORDERS="$("$jq_bin" -r 'if .features.window_borders == false then 0 else 1 end' "$INSTALL_CHOICES_FILE" 2>/dev/null || printf '1\n')"
+}
+
+resolve_launcher_mode() {
+  local launcher_mode_file="$TARGET_HOME/.config/keskos/launcher-mode"
+  local requested_mode="$LAUNCHER_MODE"
+
+  if [[ -z "$requested_mode" && -f "$launcher_mode_file" ]]; then
+    requested_mode="$(head -n 1 "$launcher_mode_file" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  fi
+
+  case "$requested_mode" in
+    keskos)
+      LAUNCHER_MODE="keskos"
+      ;;
+    kde)
+      LAUNCHER_MODE="kde"
+      ;;
+    "")
+      LAUNCHER_MODE="keskos"
+      ;;
+    *)
+      LAUNCHER_MODE="keskos"
+      ;;
+  esac
+
+  write_if_needed "$launcher_mode_file" 644 <<EOF
+$LAUNCHER_MODE
+EOF
 }
 
 ensure_dirs() {
@@ -305,7 +334,6 @@ install_live_desktop_shortcuts() {
 
   for source_entry in \
     /usr/share/applications/install-keskos.desktop \
-    /usr/share/applications/keskos-launcher.desktop \
     /usr/share/applications/keskos-browser.desktop \
     /usr/share/applications/keskos-files.desktop
   do
@@ -324,27 +352,35 @@ write_application_shortcut() {
   "$kwriteconfig_bin" --file "$shortcuts_file" --group "$desktop_id" --key "_launch" "$shortcut_value"
 }
 
+clear_application_shortcut() {
+  local desktop_id="$1"
+  local shortcuts_file="$TARGET_HOME/.config/kglobalshortcutsrc"
+
+  "$kwriteconfig_bin" --file "$shortcuts_file" --group "services/$desktop_id" --key "_launch" "none,none,"
+  "$kwriteconfig_bin" --file "$shortcuts_file" --group "$desktop_id" --key "_launch" "none,none,"
+}
+
 configure_shortcuts() {
   local shortcuts_file="$TARGET_HOME/.config/kglobalshortcutsrc"
   local kwin_file="$TARGET_HOME/.config/kwinrc"
-  local meta_action="org.kde.kglobalaccel,/component/keskos_launcher_desktop,org.kde.kglobalaccel.Component,invokeShortcut,_launch"
+  local meta_action="org.kde.plasmashell,/PlasmaShell,org.kde.PlasmaShell,activateLauncherMenu"
 
   [[ -n "$kwriteconfig_bin" ]] || return 0
 
   "$kwriteconfig_bin" --file "$kwin_file" --group ModifierOnlyShortcuts --key Meta "$meta_action"
-  "$kwriteconfig_bin" --file "$shortcuts_file" --group plasmashell --key "activate application launcher" "none,none,Activate Application Launcher" >/dev/null 2>&1 || true
+  "$kwriteconfig_bin" --file "$shortcuts_file" --group plasmashell --key "activate application launcher" "Alt+F1,Alt+F1,Activate Application Launcher" >/dev/null 2>&1 || true
   "$kwriteconfig_bin" --file "$shortcuts_file" --group kwin --key "Edit Tiles" "none,none,Toggle Tiles Editor" >/dev/null 2>&1 || true
   "$kwriteconfig_bin" --file "$shortcuts_file" --group kwin --key Overview "none,none,Toggle Overview" >/dev/null 2>&1 || true
   "$kwriteconfig_bin" --file "$shortcuts_file" --group kwin --key "Walk Through Windows (Reverse)" "Alt+Shift+Tab,Alt+Shift+Tab,Walk Through Windows (Reverse)" >/dev/null 2>&1 || true
 
-  write_application_shortcut "keskos-launcher.desktop" "Meta+K,Meta+K,KESKOS Launcher"
+  clear_application_shortcut "keskos-launcher.desktop"
+  clear_application_shortcut "keskos-launcher-apps.desktop"
+  clear_application_shortcut "keskos-launcher-windows.desktop"
+  clear_application_shortcut "keskos-launcher-settings.desktop"
+  clear_application_shortcut "keskos-launcher-power.desktop"
   write_application_shortcut "keskos-terminal.desktop" $'Meta+T\tMeta+Return,Meta+T\tMeta+Return,KESKOS Terminal'
   write_application_shortcut "keskos-files.desktop" "Meta+N,Meta+N,KESKOS Files"
-  write_application_shortcut "keskos-browser.desktop" "Meta+W,Meta+W,KESKOS Browser"
-  write_application_shortcut "keskos-launcher-apps.desktop" "Meta+Shift+K,Meta+Shift+K,KESKOS Apps"
-  write_application_shortcut "keskos-launcher-windows.desktop" "Meta+Shift+Tab,Meta+Shift+Tab,KESKOS Windows"
-  write_application_shortcut "keskos-launcher-settings.desktop" "Meta+Shift+S,Meta+Shift+S,KESKOS Settings"
-  write_application_shortcut "keskos-launcher-power.desktop" "Meta+P,Meta+P,KESKOS Power"
+  write_application_shortcut "keskos-browser.desktop" "Meta+B,Meta+B,KESKOS Browser"
 }
 
 configure_terminal() {
@@ -372,7 +408,7 @@ configure_kde_visuals() {
   if [[ "$FEATURE_PLASMA_THEME" -eq 1 ]]; then
     "$kwriteconfig_bin" --file "$kdeglobals" --group General --key ColorScheme "KESKOS"
     "$kwriteconfig_bin" --file "$kdeglobals" --group KDE --key LookAndFeelPackage "com.keskos.desktop"
-    "$kwriteconfig_bin" --file "$plasmarc" --group Theme --key name "default"
+    "$kwriteconfig_bin" --file "$plasmarc" --group Theme --key name "keskos-shell"
   fi
 
   if [[ "$FEATURE_WINDOW_BORDERS" -eq 1 ]]; then
@@ -471,6 +507,7 @@ configure_plasma_panel() {
   done
 
   script="$(<"$script_path")"
+  script="${script/const DEFAULT_LAUNCHER_MODE = \"keskos\";/const DEFAULT_LAUNCHER_MODE = \"$LAUNCHER_MODE\";}"
   "$qdbus_bin" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "$script" >/dev/null 2>&1 || true
 
   for attempt in 1 2 3 4 5; do
@@ -504,6 +541,7 @@ fix_ownership() {
     "$TARGET_HOME/.config/konsolerc"
     "$TARGET_HOME/.config/kdeglobals"
     "$TARGET_HOME/.config/kglobalshortcutsrc"
+    "$TARGET_HOME/.config/keskos/launcher-mode"
     "$TARGET_HOME/.config/kwinrc"
     "$TARGET_HOME/.config/kscreenlockerrc"
     "$TARGET_HOME/.config/ksplashrc"
@@ -527,6 +565,7 @@ main() {
   resolve_source_root
   resolve_install_choices
   ensure_dirs
+  resolve_launcher_mode
   remove_legacy_eww
   install_fastfetch_assets
   install_quickshell_config

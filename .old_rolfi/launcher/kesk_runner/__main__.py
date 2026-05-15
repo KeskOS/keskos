@@ -151,7 +151,7 @@ def home_results(context: SearchContext) -> list[Result]:
     return [
         Result(id="home:terminal", title="Terminal", subtitle="Meta+T or Meta+Enter", category="Home", score=7000, action={"type": "terminal"}),
         Result(id="home:files", title="Files", subtitle="Meta+N", category="Home", score=6990, action={"type": "path", "path": str(context.home), "prefer_dolphin": True}),
-        Result(id="home:browser", title="Browser", subtitle="Meta+W | LibreWolf homepage", category="Home", score=6980, action={"type": "browser", "url": f"file://{homepage_url}" if Path(homepage_url).is_file() else None}),
+        Result(id="home:browser", title="Browser", subtitle="Meta+B | Preferred browser homepage", category="Home", score=6980, action={"type": "browser", "url": f"file://{homepage_url}" if Path(homepage_url).is_file() else None}),
         Result(id="home:apps", title="App Search", subtitle="Meta+Shift+K", category="Home", score=6970, action={"type": "launcher", "mode": "apps"}),
         Result(id="home:windows", title="Active Windows", subtitle=windows_subtitle, category="Home", score=6960, action=windows_action),
         Result(id="home:settings", title="Settings", subtitle="Meta+Shift+S", category="Home", score=6950, action={"type": "launcher", "mode": "settings"}),

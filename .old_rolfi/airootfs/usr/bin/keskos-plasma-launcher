@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+for candidate in \
+  "${SCRIPT_DIR}/../lib/keskos-launcher/plasmoid_backend.py" \
+  "$HOME/.local/lib/keskos-launcher/plasmoid_backend.py" \
+  "/usr/lib/keskos-launcher/plasmoid_backend.py" \
+  "/usr/local/share/keskos/source/airootfs/usr/lib/keskos-launcher/plasmoid_backend.py" \
+  "/usr/share/keskos/source/airootfs/usr/lib/keskos-launcher/plasmoid_backend.py"
+do
+  if [[ -r "$candidate" ]]; then
+    exec python3 "$candidate" "$@"
+  fi
+done
+
+printf 'keskos-plasma-launcher: could not find plasmoid backend\n' >&2
+exit 1

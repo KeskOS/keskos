@@ -1,6 +1,9 @@
 [kdeglobals][General]
 ColorScheme=KESKOS
 
+[plasmarc][Theme]
+name=keskos-shell
+
 [kwinrc][org.kde.kdecoration2]
 library=org.kde.kwin.aurorae
 theme=kwin4_decoration_qml_keskos_split

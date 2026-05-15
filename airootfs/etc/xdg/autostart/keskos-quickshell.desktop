@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=KeskOS Shell Session Start
+Comment=Apply KeskOS defaults and start the Quickshell desktop layer
+Exec=/usr/local/bin/keskos-session-start
+OnlyShowIn=KDE;
+X-KDE-autostart-phase=1
+NoDisplay=true
+StartupNotify=false

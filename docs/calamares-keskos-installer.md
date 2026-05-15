@@ -21,7 +21,6 @@ Flow:
 Calamares config:
 
 - `calamares/settings.conf`
-- `calamares/modules/keskos-loadout.conf`
 - `calamares/modules/keskos-review.conf`
 - `calamares/modules/keskoschoices.conf`
 - `calamares/modules/packages.conf`
@@ -39,7 +38,6 @@ Calamares branding:
 - `calamares/branding/keskos/branding.desc`
 - `calamares/branding/keskos/stylesheet.qss`
 - `calamares/branding/keskos/show.qml`
-- `calamares/branding/keskos/keskosloadout.qml`
 - `calamares/branding/keskos/keskosreview.qml`
 
 Custom install helpers:
@@ -141,7 +139,7 @@ The current installer supports:
 - desktop profile selection
 - system add-on selection
 
-The current pass does **not** include a fully searchable pacman UI inside Calamares, and it no longer uses the abandoned custom free-text package field from the broken notesqml approach.
+The current pass does **not** include a fully searchable pacman UI inside Calamares, and it no longer uses the abandoned custom `notesqml` loadout experiment.
 
 Install behavior:
 
@@ -229,10 +227,6 @@ Add or edit bundle groups:
 
 - `airootfs/usr/share/keskos/installer/package-manifest.json`
 
-Change the loadout UI:
-
-- `calamares/branding/keskos/keskosloadout.qml`
-
 Change the deploy review UI:
 
 - `calamares/branding/keskos/keskosreview.qml`
@@ -244,3 +238,7 @@ Adjust target apply logic:
 Adjust package resolution logic:
 
 - `airootfs/usr/lib/calamares/modules/keskoschoices/main.py`
+
+Archived installer experiments:
+
+- `.old_experiments/calamares-loadout/`

@@ -1,0 +1,22 @@
+{
+    "KPackageStructure": "Plasma/LayoutTemplate",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "hello@keskos.org",
+                "Name": "KeskOS"
+            }
+        ],
+        "Category": "",
+        "Description": "KeskOS branded default panel with launcher, pinned apps, workspace switcher, tray, and clock",
+        "EnabledByDefault": true,
+        "Id": "org.keskos.plasma.defaultPanel",
+        "License": "GPL-3.0-or-later",
+        "Name": "KeskOS Default Panel",
+        "Website": "https://keskos.org"
+    },
+    "X-Plasma-ContainmentCategories": [
+        "panel"
+    ],
+    "X-Plasma-Shell": "plasmashell"
+}

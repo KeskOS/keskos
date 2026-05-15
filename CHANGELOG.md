@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-05-15
+
+### Launcher cleanup, branded panel defaults, and Plasma polish
+
+KeskOS moved fully onto the branded Plasma launcher and panel path, cleaned out the dead Wolfi/Rofi-era install flow, and tightened the desktop defaults around a reusable KDE panel layout.
+
+### Added
+
+- `org.kde.plasma.simplekickoff` patch set for the branded `Kesk Kickoff` launcher
+- `docs/keybinds.md` for the current enforced shortcut map
+- `docs/launcher-switching.md` for launcher mode behavior and recovery
+- `docs/plasma-panel-layout.md` for the branded panel structure and reset flow
+- `docs/repository-structure.md` for the current repo layout
+- `keskos-reset-panel` for safe, repeatable panel resets with backup
+- system-wide `org.keskos.plasma.defaultPanel` layout template
+- branded panel wrapper desktop entries and fixed panel icon assets
+
+### Changed
+
+- switched the active launcher path from old Wolfi/Rofi-era code to the branded patched Plasma launcher
+- made the branded bottom panel the intended default layout for fresh users and resets
+- simplified the bottom panel by removing the stock right-side tray and clock cluster
+- updated launcher branding to use the real KeskOS logo in the panel button and metadata paths
+- refreshed README/docs to describe the current Plasma launcher and panel workflow instead of the old custom runner stack
+
+### Removed
+
+- removed the old live install path for Wolfi/Rofi launcher scripts from the active build
+- removed dead launcher desktop entries, dead Rofi configs, and the old `launcher/kesk_runner` runtime from the active tree
+- removed the abandoned Calamares `keskosloadout` experiment from the active install flow
+
+### Archived
+
+- moved the old Wolfi/Rofi launcher stack into `.old_rolfi/`
+- moved dead Calamares loadout and placeholder launcher icon experiments into `.old_experiments/`
+
+### Fixed
+
+- fixed taskbar launcher pins so they use explicit branded desktop wrappers and panel icon assets
+- fixed the launcher logo path so the branded panel button no longer falls back to the broken placeholder state
+- fixed panel layout drift by making the compact launcher button truly icon-first and centered
+- fixed duplicate/extra panel state in the branded panel script and reset path
+- fixed build staging after the old launcher tree was removed from the active source layout
+
 ## 2026-05-08
 
 ### Installer console, browser loadout, and release routing

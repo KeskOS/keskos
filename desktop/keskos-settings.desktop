@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=KESKOS Settings
+Comment=Open System Settings from KeskOS
+Exec=systemsettings
+Icon=/usr/share/keskos/panel-icons/settings.svg
+Terminal=false
+StartupNotify=false
+Categories=Settings;System;Utility;

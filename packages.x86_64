@@ -22,7 +22,6 @@ jq
 kdialog
 kate
 kde-cli-tools
-kdotool-bin
 konsole
 kpmcore
 librewolf-bin
@@ -48,7 +47,6 @@ polkit-kde-agent
 procps-ng
 python
 pyside6
-python-pyxdg
 qemu-guest-agent
 qt6-5compat
 qt6-base
@@ -56,7 +54,6 @@ qt6-declarative
 qt6-svg
 qt6-wayland
 quickshell
-rofi
 rsync
 sddm
 sddm-kcm
@@ -67,9 +64,6 @@ systemsettings
 ttf-jetbrains-mono-nerd
 wayland
 wireplumber
-wl-clipboard
-wmctrl
-xclip
 xdg-desktop-portal-kde
 xdg-utils
 xorg-xwayland
