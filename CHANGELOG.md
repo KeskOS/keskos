@@ -15,13 +15,27 @@ This change set is intended for the `beta-development` branch.
 
 - the first official `kesk` command router with `help`, `version`, and `upgrade`
 - `kesk upgrade` terminal updater flow for pacman, AUR, Flatpak, and firmware checks
+- `kesk doctor` terminal system health checker for package, desktop, and service state
+- `kesk repair` terminal repair console for branded desktop, launcher, HUD, and boot-theme recovery
+- `kesk settings` terminal control center for launching KeskOS maintenance tools and viewing basic OS info
+- `kesk-settings` Qt control center as the main graphical KeskOS settings app
 - `docs/kesk-upgrade.md` for updater usage, logging, and troubleshooting
+- `docs/kesk-doctor.md` for doctor usage, debug exports, and health check meanings
+- `docs/kesk-repair.md` for repair usage, backups, and recovery scope
+- `docs/kesk-settings.md` for control center usage, logging, and scope limits
+- `docs/kesk-settings-gui.md` for the graphical control center, page layout, and CLI relationship
 - `kesk-upgrade.desktop` launcher entry for KDE
+- `kesk-doctor.desktop` launcher entry for KDE
+- `kesk-repair.desktop` launcher entry for KDE
+- `kesk-settings.desktop` launcher entry for KDE
 
 ### Changed
 
 - added `python-rich`, `pacman-contrib`, and `pacman-mirrorlist` to the ISO package set
 - hardened live-image permissions and logging fallback for the new `kesk` tools
+- extended the `kesk` router so `help`, unknown-command output, and command dispatch now include `doctor`, `repair`, and `settings`
+- expanded `kesk repair` so full theme and visual-identity restoration stays inside the repair console instead of being split into a separate theme tool
+- upgraded `kesk settings` from a terminal-only launcher into a PySide6 control center with dashboard, updates, doctor, repair, appearance, desktop, boot/login, logs, and about pages
 - rewrote installed-system pacman setup during post-install so the target system gets a usable mirror-backed repo configuration
 - renamed the default installer desktop profile wording to `KeskOS Split Shell Profile`
 - updated README and docs to mark this line as beta-branch work

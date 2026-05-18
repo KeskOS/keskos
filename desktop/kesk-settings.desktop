@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Kesk Settings
+Comment=KeskOS control center and system tools
+Exec=kesk-settings
+Icon=preferences-system
+Terminal=false
+StartupNotify=false
+Categories=System;Utility;Settings;

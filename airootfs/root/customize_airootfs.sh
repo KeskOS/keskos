@@ -29,8 +29,24 @@ if [[ -f /usr/bin/kesk ]]; then
   chmod 0755 /usr/bin/kesk
 fi
 
+if [[ -f /usr/bin/kesk-settings ]]; then
+  chmod 0755 /usr/bin/kesk-settings
+fi
+
 if [[ -f /usr/lib/kesk/commands/upgrade ]]; then
   chmod 0755 /usr/lib/kesk/commands/upgrade
+fi
+
+if [[ -f /usr/lib/kesk/commands/doctor ]]; then
+  chmod 0755 /usr/lib/kesk/commands/doctor
+fi
+
+if [[ -f /usr/lib/kesk/commands/repair ]]; then
+  chmod 0755 /usr/lib/kesk/commands/repair
+fi
+
+if [[ -f /usr/lib/kesk/commands/settings ]]; then
+  chmod 0755 /usr/lib/kesk/commands/settings
 fi
 
 if [[ -f /home/liveuser/Desktop/Install\ KeskOS.desktop ]]; then

@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 work/
 out/
+.old_rolfi
+.old_experiments
+/docs/website-content

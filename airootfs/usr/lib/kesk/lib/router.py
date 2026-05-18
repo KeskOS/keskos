@@ -10,7 +10,10 @@ from common import APP_VERSION, KeskConsole
 HELP_ROWS = (
     ("kesk help", "Show the command router help."),
     ("kesk version", "Show the current Kesk tool version."),
-    ("kesk upgrade", "Open the KeskOS system upgrade manager."),
+    ("kesk upgrade", "Update KeskOS packages."),
+    ("kesk doctor", "Check system health."),
+    ("kesk repair", "Repair KeskOS desktop and theme stack."),
+    ("kesk settings", "Open the KeskOS control center."),
 )
 
 
@@ -39,6 +42,10 @@ def exec_command(command_path: Path, extra_args: Sequence[str]) -> int:
 def main(args: Sequence[str], root: Path) -> int:
     console = KeskConsole()
     upgrade_path = root / "commands" / "upgrade"
+    doctor_path = root / "commands" / "doctor"
+    repair_path = root / "commands" / "repair"
+    settings_path = root / "commands" / "settings"
+    gui_settings_path = root.parents[1] / "bin" / "kesk-settings"
 
     if not args:
         return show_help(console)
@@ -49,6 +56,12 @@ def main(args: Sequence[str], root: Path) -> int:
     if command in {"help", "--help", "-h"}:
         if extra_args and extra_args[0] == "upgrade" and upgrade_path.exists():
             return exec_command(upgrade_path, ["--help"])
+        if extra_args and extra_args[0] == "doctor" and doctor_path.exists():
+            return exec_command(doctor_path, ["--help"])
+        if extra_args and extra_args[0] == "repair" and repair_path.exists():
+            return exec_command(repair_path, ["--help"])
+        if extra_args and extra_args[0] == "settings" and settings_path.exists():
+            return exec_command(settings_path, ["--help"])
         return show_help(console)
 
     if command in {"version", "--version", "-V"}:
@@ -58,5 +71,28 @@ def main(args: Sequence[str], root: Path) -> int:
         if not upgrade_path.exists():
             return show_help(console, "upgrade command is missing from /usr/lib/kesk/commands.")
         return exec_command(upgrade_path, extra_args)
+
+    if command == "doctor":
+        if not doctor_path.exists():
+            return show_help(console, "doctor command is missing from /usr/lib/kesk/commands.")
+        return exec_command(doctor_path, extra_args)
+
+    if command == "repair":
+        if not repair_path.exists():
+            return show_help(console, "repair command is missing from /usr/lib/kesk/commands.")
+        return exec_command(repair_path, extra_args)
+
+    if command == "settings":
+        if not settings_path.exists():
+            return show_help(console, "settings command is missing from /usr/lib/kesk/commands.")
+        if extra_args and extra_args[0] == "--tui":
+            return exec_command(settings_path, extra_args[1:])
+        if extra_args and extra_args[0] == "--gui":
+            if gui_settings_path.exists():
+                return exec_command(gui_settings_path, extra_args[1:])
+            return show_help(console, "kesk-settings is missing from /usr/bin.")
+        if (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")) and gui_settings_path.exists():
+            return exec_command(gui_settings_path, extra_args)
+        return exec_command(settings_path, extra_args)
 
     return show_help(console, f"unknown command: {command}")

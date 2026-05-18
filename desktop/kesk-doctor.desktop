@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Kesk Doctor
+Comment=Check KeskOS system health and desktop integrity
+Exec=konsole --hold --workdir ~ -e /usr/bin/kesk doctor
+Icon=utilities-system-monitor
+Terminal=false
+StartupNotify=false
+Categories=System;Utility;

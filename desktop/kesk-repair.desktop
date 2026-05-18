@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Kesk Repair Console
+Comment=Repair and restore KeskOS desktop, theme and boot identity
+Exec=konsole --hold --workdir ~ -e /usr/bin/kesk repair
+Icon=preferences-system
+Terminal=false
+StartupNotify=false
+Categories=System;Utility;Settings;

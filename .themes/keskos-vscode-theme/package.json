@@ -1,0 +1,29 @@
+{
+  "name": "keskos-crt-theme",
+  "displayName": "KeskOS CRT Theme",
+  "description": "A warm phosphor orange-on-black theme based on the KeskOS ISO palette.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Themes"
+  ],
+  "keywords": [
+    "keskos",
+    "crt",
+    "orange",
+    "dark"
+  ],
+  "contributes": {
+    "themes": [
+      {
+        "label": "KeskOS CRT",
+        "uiTheme": "vs-dark",
+        "path": "./themes/keskos-crt-color-theme.json"
+      }
+    ]
+  }
+}

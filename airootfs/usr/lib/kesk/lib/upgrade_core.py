@@ -417,6 +417,42 @@ def render_package_list(console: KeskConsole, state: UpgradeState) -> None:
     console.pause()
 
 
+def source_payload(source: UpdateSource, *, include_items: bool) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "key": source.key,
+        "label": source.label,
+        "tool_label": source.tool_label,
+        "available": source.available,
+        "unavailable_reason": source.unavailable_reason,
+        "detection_note": source.detection_note,
+        "check_note": source.check_note,
+        "blocked_reason": source.blocked_reason,
+        "error": source.error,
+        "count": source.count,
+        "can_upgrade": source.can_upgrade(),
+        "upgrade_command": source.upgrade_command,
+    }
+    if include_items:
+        payload["items"] = source.items
+    return payload
+
+
+def state_payload(state: UpgradeState, *, include_items: bool) -> dict[str, object]:
+    return {
+        "pacman_lock_detected": state.pacman_lock_detected,
+        "pacman_repositories_configured": pacman_repositories_configured(),
+        "reboot_recommended": reboot_recommended(state),
+        "sources": {
+            key: source_payload(source, include_items=include_items)
+            for key, source in state.sources.items()
+        },
+    }
+
+
+def print_json_payload(payload: dict[str, object]) -> None:
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
 def describe_selection(selected: Sequence[UpdateSource]) -> list[str]:
     descriptions = []
     for source in selected:
@@ -485,6 +521,8 @@ def perform_upgrade(
     logger: SessionLogger,
     state: UpgradeState,
     selected: Sequence[UpdateSource],
+    *,
+    prompt_for_confirmation: bool = True,
 ) -> int:
     console.clear()
     console.header("KESK SYSTEM UPGRADE", "EXECUTION PLAN")
@@ -492,11 +530,12 @@ def perform_upgrade(
         console.status("ok", description)
     console.line()
 
-    if not console.confirm("Continue with selected upgrade?", default=False):
-        logger.log("selected_action=cancelled")
-        console.status("skip", "upgrade cancelled by user")
-        console.pause()
-        return 0
+    if prompt_for_confirmation:
+        if not console.confirm("Continue with selected upgrade?", default=False):
+            logger.log("selected_action=cancelled")
+            console.status("skip", "upgrade cancelled by user")
+            console.pause()
+            return 0
 
     logger.log("selected_action=" + ",".join(source.key for source in selected))
     overall_code = 0
@@ -537,20 +576,99 @@ def perform_upgrade(
 def print_help(console: KeskConsole) -> int:
     console.header("KESK SYSTEM UPGRADE", "INTERACTIVE UPDATE MANAGER")
     console.line("Usage: kesk upgrade")
+    console.line("       kesk upgrade --check --json")
+    console.line("       kesk upgrade --list --json")
+    console.line("       kesk upgrade --all|--official|--aur|--flatpak|--firmware [--yes]")
     console.line()
     console.line("Checks and upgrades:")
     console.line("- pacman official repositories")
     console.line("- yay / AUR when yay is installed")
     console.line("- Flatpak when flatpak is installed")
     console.line("- fwupd firmware updates when fwupdmgr is installed")
+    console.line("- `--yes` only skips the Kesk confirmation prompt; package managers still ask normally")
     return 0
+
+
+def choose_sources_from_keys(keys: Sequence[str], state: UpgradeState) -> tuple[list[UpdateSource], int]:
+    selected: list[UpdateSource] = []
+    blocked_due_to_lock = False
+    for key in keys:
+        source = state.source(key)
+        if source.can_upgrade():
+            selected.append(source)
+            continue
+        if state.pacman_lock_detected and key in {"official", "aur"}:
+            blocked_due_to_lock = True
+
+    if not selected and blocked_due_to_lock:
+        return [], 3
+    return selected, 0
+
+
+def run_json_mode(logger: SessionLogger, *, include_items: bool) -> int:
+    state = refresh_state(logger)
+    print_json_payload(state_payload(state, include_items=include_items))
+    return 0
+
+
+def run_direct_action(
+    console: KeskConsole,
+    logger: SessionLogger,
+    action_flag: str,
+    *,
+    auto_confirm: bool,
+) -> int:
+    mapping = {
+        "--all": ["official", "aur", "flatpak", "firmware"],
+        "--official": ["official"],
+        "--aur": ["aur"],
+        "--flatpak": ["flatpak"],
+        "--firmware": ["firmware"],
+    }
+    state = refresh_state(logger)
+    selected, selection_code = choose_sources_from_keys(mapping[action_flag], state)
+    if not selected:
+        if selection_code == 3:
+            console.header("KESK SYSTEM UPGRADE", "SAFETY CHECK")
+            console.status("warn", f"pacman lock detected at {PACMAN_LOCK_PATH}")
+            return 3
+        console.header("KESK SYSTEM UPGRADE", "NO RUNNABLE SOURCES")
+        console.status("warn", "no runnable update source is available for that selection")
+        return 1
+
+    return perform_upgrade(
+        console,
+        logger,
+        state,
+        selected,
+        prompt_for_confirmation=not auto_confirm,
+    )
 
 
 def main(args: Sequence[str], _root: Path) -> int:
     console = KeskConsole()
+    arg_set = set(args)
 
     if args and args[0] in {"--help", "-h", "help"}:
         return print_help(console)
+
+    json_mode = "--json" in arg_set
+    auto_confirm = "--yes" in arg_set
+    action_flags = [flag for flag in ("--all", "--official", "--aur", "--flatpak", "--firmware") if flag in arg_set]
+
+    if json_mode and "--list" in arg_set:
+        logger = SessionLogger("upgrade")
+        try:
+            return run_json_mode(logger, include_items=True)
+        finally:
+            logger.close()
+
+    if json_mode and "--check" in arg_set:
+        logger = SessionLogger("upgrade")
+        try:
+            return run_json_mode(logger, include_items=False)
+        finally:
+            logger.close()
 
     if os.geteuid() == 0:
         console.header("KESK SYSTEM UPGRADE", "SAFETY CHECK")
@@ -561,6 +679,9 @@ def main(args: Sequence[str], _root: Path) -> int:
     last_exit_code = 0
 
     try:
+        if action_flags:
+            return run_direct_action(console, logger, action_flags[0], auto_confirm=auto_confirm)
+
         state = refresh_state(logger)
 
         if (
