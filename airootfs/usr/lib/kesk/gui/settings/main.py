@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 from typing import Sequence
 
 try:
@@ -12,15 +11,13 @@ except ImportError as exc:  # pragma: no cover - dependency/runtime guard
 else:  # pragma: no cover - exercised in GUI runtime
     IMPORT_ERROR = None
 
-from .app import build_application
-
 
 def print_help() -> int:
     print("KESK SETTINGS")
     print("Usage: kesk-settings")
     print()
-    print("Launches the KeskOS graphical control center.")
-    print("Use `kesk settings` to auto-select GUI or TUI based on the current session.")
+    print("Launches the graphical Kesk Settings application.")
+    print("Use `kesk settings` to route between GUI mode, dry-run mode, and graphical-session checks.")
     return 0
 
 
@@ -32,6 +29,8 @@ def main(args: Sequence[str], root: Path) -> int:
         print("Kesk Settings could not start because PySide6 is unavailable.")
         print(f"Import error: {IMPORT_ERROR}")
         return 1
+
+    from .app import build_application
 
     app, window = build_application(root)
     window.show()

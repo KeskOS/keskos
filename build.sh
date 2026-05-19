@@ -3,12 +3,15 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="${REPO_ROOT}/out"
-SAFE_BUILD_ROOT="/tmp/keskos-build-${UID}"
+SAFE_BUILD_ROOT="${KESKOS_SAFE_BUILD_ROOT:-/tmp/keskos-build-${UID}}"
 WORK_ROOT="${SAFE_BUILD_ROOT}/work"
 STAGE_DIR="${WORK_ROOT}/profile"
 ARCHISO_WORK_DIR="${WORK_ROOT}/archiso"
 LOCAL_REPO_DIR="${WORK_ROOT}/localrepo/x86_64"
 GENERATED_PACMAN_CONF="${WORK_ROOT}/pacman.conf"
+GENERATED_MIRRORLIST="${WORK_ROOT}/mirrorlist"
+PACMAN_SYNC_DB_PATH="${WORK_ROOT}/pacman-sync-db"
+PACMAN_SYNC_CACHE_DIR="${WORK_ROOT}/pacman-sync-cache"
 AUR_BUILD_ROOT="${SAFE_BUILD_ROOT}/aur"
 AUR_PKGDEST="${SAFE_BUILD_ROOT}/pkgdest"
 GNUPG_BUILD_HOME="${SAFE_BUILD_ROOT}/gnupg"
@@ -28,6 +31,31 @@ warn() {
 fail() {
   printf '[keskos-build] error: %s\n' "$1" >&2
   exit 1
+}
+
+append_sudo_env_if_set() {
+  local -n env_ref="$1"
+  local var_name="$2"
+  local value="${!var_name-}"
+
+  if [[ -n "$value" ]]; then
+    env_ref+=("${var_name}=${value}")
+  fi
+}
+
+build_sudo_env() {
+  local -n env_ref="$1"
+  local variable_name=""
+
+  for variable_name in \
+    TMPDIR TMP TEMP \
+    http_proxy https_proxy ftp_proxy rsync_proxy no_proxy all_proxy \
+    HTTP_PROXY HTTPS_PROXY FTP_PROXY RSYNC_PROXY NO_PROXY ALL_PROXY \
+    RES_OPTIONS LOCALDOMAIN \
+    SSL_CERT_FILE SSL_CERT_DIR CURL_CA_BUNDLE
+  do
+    append_sudo_env_if_set env_ref "$variable_name"
+  done
 }
 
 array_contains() {
@@ -106,6 +134,7 @@ prepare_workdirs() {
   mkdir -p "$STAGE_DIR" "$ARCHISO_WORK_DIR"
   mkdir -p "$LOCAL_REPO_DIR"
   mkdir -p "$AUR_BUILD_ROOT" "$AUR_PKGDEST"
+  mkdir -p "$PACMAN_SYNC_DB_PATH" "$PACMAN_SYNC_CACHE_DIR"
   mkdir -p "$GNUPG_BUILD_HOME"
   chmod 700 "$GNUPG_BUILD_HOME"
 
@@ -302,10 +331,57 @@ refresh_local_repo() {
 
 generate_pacman_conf() {
   local local_repo_uri=""
+  local mirrorlist_source="${KESKOS_OVERRIDE_MIRRORLIST:-/etc/pacman.d/mirrorlist}"
   log "Generating a pacman.conf that points at the local Calamares repository..."
+
+  [[ -f "$mirrorlist_source" ]] || fail "Pacman mirrorlist source was not found: ${mirrorlist_source}"
+  grep -Eq '^[[:space:]]*Server[[:space:]]*=' "$mirrorlist_source" || fail "Pacman mirrorlist source has no usable Server entries: ${mirrorlist_source}"
+
+  install -m 644 "$mirrorlist_source" "${GENERATED_MIRRORLIST}"
   local_repo_uri="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve().as_uri())' "${LOCAL_REPO_DIR}")"
-  sed "s|__KESKOS_LOCAL_REPO_URI__|${local_repo_uri}|g" \
-    "${REPO_ROOT}/pacman.conf" >"${GENERATED_PACMAN_CONF}"
+  python3 - "${REPO_ROOT}/pacman.conf" "${GENERATED_PACMAN_CONF}" "${local_repo_uri}" "${GENERATED_MIRRORLIST}" <<'PY'
+from pathlib import Path
+import sys
+
+template_path = Path(sys.argv[1])
+output_path = Path(sys.argv[2])
+local_repo_uri = sys.argv[3]
+mirrorlist_path = sys.argv[4]
+
+text = template_path.read_text(encoding="utf-8")
+text = text.replace("__KESKOS_LOCAL_REPO_URI__", local_repo_uri)
+text = text.replace("/etc/pacman.d/mirrorlist", mirrorlist_path)
+output_path.write_text(text, encoding="utf-8")
+PY
+}
+
+preflight_repo_sync() {
+  local -a sudo_env=()
+  local attempt=1
+  local max_attempts="${KESKOS_PACMAN_SYNC_ATTEMPTS:-3}"
+
+  build_sudo_env sudo_env
+  sudo mkdir -p "$PACMAN_SYNC_DB_PATH" "$PACMAN_SYNC_CACHE_DIR"
+
+  while (( attempt <= max_attempts )); do
+    log "Preflighting pacman repository sync (attempt ${attempt}/${max_attempts})..."
+    if sudo env "${sudo_env[@]}" pacman \
+      --config "${GENERATED_PACMAN_CONF}" \
+      --dbpath "${PACMAN_SYNC_DB_PATH}" \
+      --cachedir "${PACMAN_SYNC_CACHE_DIR}" \
+      -Sy --noconfirm; then
+      log "Pacman repository sync preflight succeeded."
+      return 0
+    fi
+
+    if (( attempt == max_attempts )); then
+      fail "Pacman repository sync failed after ${max_attempts} attempts. On WSL, check DNS resolution, proxy settings, and mirror reachability."
+    fi
+
+    warn "Pacman repository sync preflight failed. Retrying in 5 seconds..."
+    sleep 5
+    attempt=$((attempt + 1))
+  done
 }
 
 stage_profile_basics() {
@@ -422,14 +498,22 @@ stage_boot_branding() {
 }
 
 run_mkarchiso() {
+  local -a sudo_env=()
+  local returncode=0
   log "Building the KeskOS ISO with mkarchiso..."
-  sudo mkarchiso \
+  build_sudo_env sudo_env
+  if sudo env "${sudo_env[@]}" mkarchiso \
     -v \
     -C "${GENERATED_PACMAN_CONF}" \
     -w "${ARCHISO_WORK_DIR}" \
     -o "${OUT_DIR}" \
-    "${STAGE_DIR}"
+    "${STAGE_DIR}"; then
+    returncode=0
+  else
+    returncode=$?
+  fi
   restore_build_root_ownership
+  return "$returncode"
 }
 
 main() {
@@ -440,6 +524,7 @@ main() {
   fi
 
   prepare_workdirs
+  trap restore_build_root_ownership EXIT
 
   for package_name in "${AUR_PACKAGES[@]}"; do
     build_aur_package "$package_name"
@@ -447,12 +532,15 @@ main() {
 
   refresh_local_repo
   generate_pacman_conf
+  preflight_repo_sync
   stage_profile_basics
   stage_source_tree
   stage_live_system_assets
   stage_application_entries
   stage_boot_branding
   run_mkarchiso
+  trap - EXIT
+  restore_build_root_ownership
 
   log "KeskOS ISO build complete."
   log "Output directory: ${OUT_DIR}"

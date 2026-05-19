@@ -1,97 +1,107 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget
+from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLineEdit, QSpinBox, QWidget
 
+from ..widgets import SettingsSection, action_bar, small_button
 from .base import BasePage
-from ..widgets import CardFrame, OutputConsole, StatusLabel
 
 
 class DesktopPage(BasePage):
     page_key = "desktop"
 
     def __init__(self, controller) -> None:
-        super().__init__(controller, "Desktop", "PANELS // LAUNCHER // HUD STATUS")
-        self._loaded = False
+        super().__init__(controller, "Desktop", "Adjust wallpaper, virtual desktops, and the high-level KeskOS desktop presentation layer.")
+        self.backend = controller.backend
+        self._build_ui()
+        self.load_state()
 
-        status_card = CardFrame("Desktop Stack", "CURRENT SESSION AND DESKTOP SHELL")
-        self.fields = {}
-        for key, text in (
-            ("session", "desktop session: waiting"),
-            ("panels", "panel status: waiting"),
-            ("launcher", "launcher status: waiting"),
-            ("hud", "HUD status: waiting"),
-        ):
-            field = StatusLabel(text, "work")
-            self.fields[key] = field
-            status_card.layout.addWidget(field)
-        self.root_layout.insertWidget(2, status_card)
+    def _build_ui(self) -> None:
+        wallpaper_section = SettingsSection("Wallpaper and shell")
+        self.wallpaper_path = QLineEdit()
+        choose_button = small_button("Choose File")
+        choose_button.clicked.connect(self.choose_wallpaper)
+        path_host = QWidget()
+        path_layout = QHBoxLayout(path_host)
+        path_layout.setContentsMargins(0, 0, 0, 0)
+        path_layout.setSpacing(8)
+        path_layout.addWidget(self.wallpaper_path, 1)
+        path_layout.addWidget(choose_button)
+        self.desktop_icons = QCheckBox("Show desktop icons")
+        self.desktop_toolbox = QCheckBox("Show Plasma desktop toolbox")
+        self.show_hidden = QCheckBox("Show hidden files on the desktop when supported")
+        self.containment = QLineEdit()
+        self.screen_edges = QLineEdit()
 
-        buttons = QWidget()
-        row = QHBoxLayout(buttons)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(8)
-        for text, callback in (
-            ("RESET PANELS", self.reset_panels),
-            ("REPAIR LAUNCHER", self.repair_launcher),
-            ("RESTART PLASMA", self.restart_plasma),
-            ("RESTART HUD", self.restart_hud),
-        ):
-            button = QPushButton(text)
-            button.clicked.connect(callback)
-            row.addWidget(button)
-        self.root_layout.insertWidget(3, buttons)
+        wallpaper_section.add_row("Wallpaper file", "Desktop background path applied through Plasma wallpaper helpers.", path_host, keywords="wallpaper desktop background")
+        wallpaper_section.add_row("Desktop containment", "Folder view or plain desktop containment preference stored by KeskOS.", self.containment, keywords="containment folder view desktop mode")
+        wallpaper_section.add_row("Screen edge behavior", "High-level preference for the desktop edge action.", self.screen_edges, keywords="screen edge corners behavior")
+        wallpaper_section.add_row("Desktop icons", "Store whether icons should remain visible on the desktop.", self.desktop_icons, keywords="icons desktop")
+        wallpaper_section.add_row("Desktop toolbox", "Store whether the Plasma desktop toolbox should remain visible.", self.desktop_toolbox, keywords="toolbox plasma desktop")
+        wallpaper_section.add_row("Show hidden files", "Store hidden-file visibility for folder-view style desktops.", self.show_hidden, keywords="hidden files")
+        self.add_section(wallpaper_section)
 
-        output_card = CardFrame("Desktop Console", "USER-LEVEL DESKTOP ACTIONS")
-        self.output_console = OutputConsole()
-        output_card.layout.addWidget(self.output_console)
-        self.root_layout.insertWidget(4, output_card, 1)
+        desktop_section = SettingsSection("Virtual desktops")
+        self.desktop_count = QSpinBox()
+        self.desktop_count.setRange(1, 8)
+        desktop_section.add_row("Desktop count", "Choose how many workspaces KDE should keep active.", self.desktop_count, keywords="virtual desktops workspaces count")
+
+        self.workspace_names: list[QLineEdit] = []
+        for index in range(1, 9):
+            field = QLineEdit()
+            self.workspace_names.append(field)
+            desktop_section.add_row(
+                f"Workspace {index}",
+                "Visible workspace name written into kwinrc.",
+                field,
+                keywords="workspace name virtual desktop",
+            )
+        self.add_section(desktop_section)
+
+        apply_button = small_button("Apply", primary=True)
+        apply_button.clicked.connect(self.apply_changes)
+        revert_button = small_button("Revert")
+        revert_button.clicked.connect(self.load_state)
+        action_section = SettingsSection("Apply changes")
+        action_section.add_widget(action_bar(apply_button, revert_button), keywords="apply revert")
+        self.add_section(action_section)
+
+    def choose_wallpaper(self) -> None:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "Choose Wallpaper",
+            self.wallpaper_path.text() or str(self.controller.backend.paths.home / "Pictures"),
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp *.svg)",
+        )
+        if path:
+            self.wallpaper_path.setText(path)
+
+    def load_state(self) -> None:
+        state = self.backend.desktop_state()
+        self.wallpaper_path.setText(str(state["wallpaper_path"]))
+        self.desktop_icons.setChecked(bool(state["desktop_icons"]))
+        self.desktop_toolbox.setChecked(bool(state["desktop_toolbox"]))
+        self.show_hidden.setChecked(bool(state["desktop_show_hidden"]))
+        self.containment.setText(str(state["desktop_containment"]))
+        self.screen_edges.setText(str(state["screen_edge_behavior"]))
+        self.desktop_count.setValue(int(state["desktop_count"]))
+        names = list(state["workspace_names"])
+        for index, field in enumerate(self.workspace_names):
+            field.setText(names[index] if index < len(names) else str(index + 1))
+
+    def apply_changes(self) -> None:
+        values = {
+            "wallpaper_path": self.wallpaper_path.text().strip(),
+            "desktop_icons": self.desktop_icons.isChecked(),
+            "desktop_toolbox": self.desktop_toolbox.isChecked(),
+            "desktop_show_hidden": self.show_hidden.isChecked(),
+            "desktop_containment": self.containment.text().strip() or "folder_view",
+            "screen_edge_behavior": self.screen_edges.text().strip() or "overview",
+            "desktop_count": self.desktop_count.value(),
+            "workspace_names": [field.text().strip() for field in self.workspace_names],
+        }
+        result = self.backend.apply_desktop(values)
+        self.show_result(result, "Desktop")
+        self.load_state()
 
     def on_activated(self) -> None:
-        if not self._loaded:
-            self.refresh()
-
-    def refresh(self) -> None:
-        self._loaded = True
-        self.controller.run_json_tool("doctor", ["--json"], self._apply_doctor, self.controller.surface_error)
-
-    def _apply_doctor(self, payload: dict) -> None:
-        info = dict(self.controller.about_rows())
-        self.fields["session"].set_status(f"desktop session: {info.get('Current desktop', info.get('Desktop session', 'unknown'))}", "ok")
-        panels_present = (self.controller.paths.home / ".config" / "plasma-org.kde.plasma.desktop-appletsrc").exists()
-        self.fields["panels"].set_status("panel config present" if panels_present else "panel config missing", "ok" if panels_present else "warn")
-        launcher_matches = payload.get("launcher_matches", [])
-        self.fields["launcher"].set_status(
-            "launcher files found" if launcher_matches else "launcher files missing",
-            "ok" if launcher_matches else "warn",
-        )
-        quickshell_matches = payload.get("quickshell_matches", [])
-        self.fields["hud"].set_status(
-            "HUD config found" if quickshell_matches else "HUD config missing",
-            "ok" if quickshell_matches else "skip",
-        )
-
-    def reset_panels(self) -> None:
-        if not self.controller.confirm("Reset the official Plasma panel layout now?"):
-            return
-        self.controller.run_stream_tool("repair", ["--panels", "--yes"], self.output_console, lambda code: self.output_console.append_line(f"[ {'OK' if code == 0 else '!!'} ] panel reset exit code: {code}"))
-
-    def repair_launcher(self) -> None:
-        if not self.controller.confirm("Repair the Kesk launcher now?"):
-            return
-        self.controller.run_stream_tool("repair", ["--launcher", "--yes"], self.output_console, lambda code: self.output_console.append_line(f"[ {'OK' if code == 0 else '!!'} ] launcher repair exit code: {code}"))
-
-    def restart_plasma(self) -> None:
-        if not self.controller.confirm("Restart the Plasma shell now?"):
-            return
-        command = ["bash", "-lc", "(kquitapp6 plasmashell || killall plasmashell || true) && kstart plasmashell"]
-        self.controller.run_stream_command(command, self.output_console, lambda code: self.output_console.append_line(f"[ {'OK' if code == 0 else '!!'} ] Plasma restart exit code: {code}"))
-
-    def restart_hud(self) -> None:
-        if not self.controller.confirm("Restart the Kesk HUD now?"):
-            return
-        command = [
-            "bash",
-            "-lc",
-            "pkill -x quickshell >/dev/null 2>&1 || true; if command -v keskos-shell >/dev/null 2>&1; then (keskos-shell >/dev/null 2>&1 &); echo HUD restart signal sent.; else echo keskos-shell helper not found.; fi",
-        ]
-        self.controller.run_stream_command(command, self.output_console, lambda code: self.output_console.append_line(f"[ {'OK' if code == 0 else '!!'} ] HUD restart exit code: {code}"))
+        self.load_state()

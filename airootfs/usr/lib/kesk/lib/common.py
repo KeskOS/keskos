@@ -53,6 +53,7 @@ def state_home() -> Path:
 
 def log_dir_candidates() -> list[Path]:
     candidates: list[Path] = []
+    uid = os.getuid() if hasattr(os, "getuid") else os.getpid()
 
     if os.environ.get("KESK_LOG_DIR"):
         candidates.append(Path(os.environ["KESK_LOG_DIR"]).expanduser())
@@ -64,7 +65,7 @@ def log_dir_candidates() -> list[Path]:
     if os.environ.get("XDG_RUNTIME_DIR"):
         candidates.append(Path(os.environ["XDG_RUNTIME_DIR"]).expanduser() / "kesk" / "logs")
 
-    candidates.append(Path(tempfile.gettempdir()) / f"kesk-{os.getuid()}" / "logs")
+    candidates.append(Path(tempfile.gettempdir()) / f"kesk-{uid}" / "logs")
 
     deduped: list[Path] = []
     seen: set[Path] = set()

@@ -1,22 +1,71 @@
 # Kesk Settings
 
-This control center work currently ships as part of the `beta-development` branch.
+`kesk settings` is the dedicated KeskOS settings application.
 
-`kesk settings` is now the main entrypoint for KeskOS settings and maintenance.
+It is a KDE/Qt settings app, not a dashboard and not a command launcher. Its job is to manage user-visible system settings from one place:
 
-Behavior:
+- KDE Plasma user settings where a safe user-level apply path exists
+- KeskOS-specific settings and preferences
 
-- in a graphical session, `kesk settings` launches the `kesk-settings` Qt GUI
-- without `DISPLAY` or `WAYLAND_DISPLAY`, it falls back to the terminal control center
-- `kesk settings --tui` forces the terminal fallback
+It does not try to replace every KDE module, and it does not embed unrelated operational tools.
 
-The GUI and TUI both route maintenance work through the existing KeskOS tools:
+## What It Configures
+
+Kesk Settings currently provides these categories:
+
+- `Appearance`
+- `Desktop`
+- `Panel & Launcher`
+- `Window Behavior`
+- `Input`
+- `Display`
+- `Sound`
+- `Network`
+- `Power`
+- `Users`
+- `Default Apps`
+- `Updates`
+- `Boot & Login`
+- `KeskOS`
+- `About`
+
+Implemented settings include:
+
+- Plasma look and feel, Plasma theme, color scheme, icon theme, cursor theme, font, wallpaper, and window decoration
+- virtual desktop count and names
+- launcher mode and launcher keybind
+- KWin focus policy, border size, compositor flags, snap behavior, and titlebar layout
+- keyboard layout and repeat settings
+- Night Color toggle
+- default audio volume and mute
+- Wi-Fi radio toggle and hostname apply when `pkexec` and `hostnamectl` are available
+- power profile when `powerprofilesctl` is available
+- avatar copy to `~/.face.icon`
+- default browser, terminal, file manager, editor, and image viewer
+- update policy preferences
+- KeskOS accent, CRT/scanline preferences, prompt style, homepage preference, first-run state, and experimental toggles
+
+Some pages also include a small handoff to the matching KDE settings module when the full feature set is better handled by KDE itself.
+
+## What It Does Not Include
+
+Kesk Settings intentionally does not include:
+
+- repair tools
+- the package updater UI
+- Docker or developer shortcuts
+- server/admin tools
+- logs/debug dashboards
+- package-manager launchers
+- terminal launch shortcuts
+
+Those remain separate commands and launchers:
 
 - `kesk upgrade`
-- `kesk doctor`
 - `kesk repair`
+- `kesk doctor`
 
-There is still no separate `kesk theme` command. Theme and visual identity recovery stay inside `kesk repair`.
+The `Updates` page may offer a small `Open Kesk Upgrade` button, but it does not embed the updater dashboard.
 
 ## Running It
 
@@ -26,131 +75,129 @@ From a terminal:
 kesk settings
 ```
 
-Force the terminal fallback:
+Dry-run backend inspection:
 
 ```bash
-kesk settings --tui
+kesk settings --dry-run
 ```
 
-Launch the GUI directly:
+Direct GUI launcher:
 
 ```bash
 kesk-settings
 ```
 
+If no graphical session is available, `kesk settings` prints:
+
+```text
+Kesk Settings requires a graphical session.
+```
+
 ## Start Menu Launcher
 
-KeskOS ships a KDE launcher entry at:
+KDE launcher entry:
 
 - `/usr/share/applications/kesk-settings.desktop`
 
 It launches:
 
 ```bash
-kesk-settings
+kesk settings
 ```
 
-The branded pinned desktop entry `keskos-settings.desktop` is still kept for panel compatibility, but it is hidden from the normal app menu and points to the same GUI control center.
+The hidden branded compatibility entry `keskos-settings.desktop` points to the same command for panel/menu integrations that still reference it.
 
-## What It Does
+## Config Storage
 
-Kesk Settings is the KeskOS control hub.
-
-The GUI provides these pages:
-
-- `Dashboard`
-- `Updates`
-- `System Doctor`
-- `Repair`
-- `Appearance`
-- `Desktop`
-- `Boot & Login`
-- `Logs`
-- `About`
-
-The terminal fallback provides the simpler menu-driven launcher:
-
-1. `System Upgrade`
-2. `System Doctor`
-3. `Repair Console`
-4. `About KeskOS`
-5. `Open Logs Directory`
-6. `Open Backups Directory`
-7. `Open Documentation`
-8. `Exit`
-
-## Relationship Between GUI And CLI
-
-The GUI does not replace the existing CLI tools.
-
-- `kesk upgrade` remains the updater backend
-- `kesk doctor` remains the doctor backend
-- `kesk repair` remains the repair and theme backend
-
-The GUI uses JSON and direct-action modes where possible, and launches the existing terminal tooling in Konsole when a privileged or interactive action is safer there.
-
-That keeps one shared maintenance flow for both desktop users and terminal users.
-
-## About KeskOS
-
-The `About` page and terminal about view show:
-
-- KeskOS version/build when available
-- kernel version
-- desktop session
-- current desktop identifier
-- Plasma version when available
-- Qt version when available
-- active user
-- hostname
-- uptime
-- package count when `pacman` is available
-- current shell
-- logs directory path
-- backups directory path
-
-## Logs
-
-Kesk Settings writes logs to:
+KeskOS-specific settings are stored in:
 
 ```text
-~/.local/state/kesk/logs/
+~/.config/kesk/settings.json
 ```
 
-Typical files:
+This file stores settings such as:
 
-- `settings-YYYYMMDD-HHMMSS.log` for the TUI fallback
-- `gui-YYYYMMDD-HHMMSS.log` for the Qt GUI
+- accent color
+- CRT effects
+- scanlines
+- panel mode
+- launcher keybind
+- update preferences
+- boot/login preferences that are not yet root-applied directly
+- default browser preference
+- prompt style
+- experimental toggles
 
-Logs include:
+GUI window state is stored separately in:
 
-- app/tool start time
-- selected pages and menu options
-- commands launched
-- exit codes
-- warnings and errors
+```text
+~/.config/kesk/settings-gui.ini
+```
 
-Passwords and secrets are not logged.
+KDE-native settings continue to live in their normal KDE config files such as:
+
+- `~/.config/kdeglobals`
+- `~/.config/kwinrc`
+- `~/.config/plasmarc`
+- `~/.config/kcminputrc`
+- `~/.config/kxkbrc`
+- `~/.config/mimeapps.list`
 
 ## Backups
 
-Kesk Settings uses the standard KeskOS backup location:
+Before important settings changes, Kesk Settings creates backups in:
 
 ```text
-~/.local/state/kesk/backups/
+~/.local/state/kesk/settings-backups/
 ```
 
-The GUI can open that folder and list backup directories, but it does not auto-restore them yet.
+Backups are timestamped and grouped by settings area, for example:
 
-## What It Does Not Do Yet
+- `*-appearance`
+- `*-desktop`
+- `*-panels`
+- `*-windows`
+- `*-defaults`
+- `*-keskos`
 
-For this stage, Kesk Settings still does not:
+## Difference From Other Kesk Commands
 
-- add `kesk welcome`
-- enable first-boot or autostart personalization flows
-- create a separate theme console
-- replace all KDE settings modules
-- edit browser profiles directly from a dedicated browser manager
-- install optional packages
+- `kesk settings` changes settings
+- `kesk upgrade` handles package, Flatpak, AUR, and firmware updates
+- `kesk repair` repairs the KeskOS desktop/theme stack
+- `kesk doctor` inspects system health
 
-Theme, panel, SDDM, Plymouth, and other branded desktop recovery work should still be run through `Repair -> kesk repair`.
+Kesk Settings is meant to feel like the OS settings app. The operational and maintenance tools stay separate.
+
+## Dry-Run And Debugging
+
+Use:
+
+```bash
+kesk settings --dry-run
+```
+
+This prints:
+
+- session type
+- Plasma version
+- Qt version
+- detected backend tools
+- config paths
+- writable config paths
+
+If a setting does not apply as expected:
+
+1. Run `kesk settings --dry-run`
+2. Confirm required tools such as `kwriteconfig6`, `lookandfeeltool`, `qdbus6`, `nmcli`, `wpctl`, or `powerprofilesctl`
+3. Check the latest GUI/session logs in `~/.local/state/kesk/logs/`
+4. Check the newest backup in `~/.local/state/kesk/settings-backups/`
+
+## Known Limitations
+
+- Not every KDE setting is implemented directly yet.
+- Display arrangement, scaling, and refresh-rate changes still lean on KDE’s advanced display module.
+- System-level boot/login changes are intentionally conservative and currently stored as preferences unless a safe user-level apply path exists.
+- Network hostname changes require `pkexec` and `hostnamectl`.
+- Audio routing is intentionally minimal; the page focuses on safe default volume and mute.
+- The app does not run as root.

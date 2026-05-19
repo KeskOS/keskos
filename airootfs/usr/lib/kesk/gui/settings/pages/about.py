@@ -1,39 +1,43 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFormLayout, QLabel, QPushButton
+from PySide6.QtWidgets import QLabel
 
-from .base import BasePage
 from ..backend import DOC_LINKS
-from ..widgets import CardFrame
+from ..widgets import SettingsSection, action_bar, small_button
+from .base import BasePage
 
 
 class AboutPage(BasePage):
     page_key = "about"
 
     def __init__(self, controller) -> None:
-        super().__init__(controller, "About KeskOS", "VERSION // BUILD // ENVIRONMENT")
-        self.fields = {}
+        super().__init__(controller, "About", "System and build information for the running KeskOS session.")
+        self.backend = controller.backend
+        self._rows: list[QLabel] = []
+        self._build_ui()
+        self.load_state()
 
-        info_card = CardFrame("System Information", "CURRENT KESKOS AND SESSION FIELDS")
-        self.form = QFormLayout()
-        info_card.layout.addLayout(self.form)
-        self.root_layout.insertWidget(2, info_card)
+    def _build_ui(self) -> None:
+        info = SettingsSection("System information")
+        for label_text, _placeholder in self.backend.about_rows():
+            value_label = QLabel()
+            info.add_row(label_text, "Current detected value.", value_label, keywords=label_text.lower())
+            self._rows.append(value_label)
+        self.add_section(info)
 
-        links_card = CardFrame("Project Links", "OFFICIAL SITE, DOCS, DOWNLOADS, AND GITHUB")
+        links = SettingsSection("Links")
+        buttons = []
         for label, url in DOC_LINKS:
-            button = QPushButton(label.upper())
+            button = small_button(label)
             button.clicked.connect(lambda _checked=False, target=url: self.controller.open_url(target))
-            links_card.layout.addWidget(button)
-        self.root_layout.insertWidget(3, links_card)
-        self.refresh()
+            buttons.append(button)
+        links.add_widget(action_bar(*buttons), keywords="website docs github downloads")
+        self.add_section(links)
 
-    def refresh(self) -> None:
-        while self.form.rowCount():
-            self.form.removeRow(0)
-        for label, value in self.controller.about_rows():
-            field = QLabel(value)
-            field.setWordWrap(True)
-            self.form.addRow(label, field)
+    def load_state(self) -> None:
+        rows = self.backend.about_rows()
+        for value_label, (_label, value) in zip(self._rows, rows):
+            value_label.setText(value)
 
     def on_activated(self) -> None:
-        self.refresh()
+        self.load_state()
