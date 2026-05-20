@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .common import limited, result_payload
+from .common import kde_handoff, result_payload
 
 
 def is_available(backend) -> bool:
@@ -24,7 +24,7 @@ def read_current(backend) -> dict[str, Any]:
         }
     )
     return {
-        "status": limited(
+        "status": kde_handoff(
             "KDE Online Accounts is exposed through the native KDE module.",
             details=["Account discovery is lightweight; add/remove flows stay in KDE's dedicated module."],
             advanced_module="kcm_kaccounts",

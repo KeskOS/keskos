@@ -56,6 +56,30 @@ class StatusLabel(QLabel):
         self.setStyleSheet(f"color: {status_color(kind)};")
 
 
+class ControlHint(QWidget):
+    def __init__(self, control: QWidget) -> None:
+        super().__init__()
+        self.control = control
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        layout.addWidget(control)
+        self.hint_label = QLabel()
+        self.hint_label.setObjectName("InlineHint")
+        self.hint_label.setWordWrap(True)
+        self.hint_label.hide()
+        layout.addWidget(self.hint_label)
+
+    def set_reason(self, text: str = "") -> None:
+        message = text.strip()
+        self.hint_label.setText(message)
+        self.hint_label.setVisible(bool(message))
+
+    def set_enabled(self, enabled: bool, reason: str = "") -> None:
+        self.control.setEnabled(enabled)
+        self.set_reason("" if enabled else reason)
+
+
 class SettingsSection(CardFrame):
     def __init__(self, title: str, subtitle: str = "") -> None:
         super().__init__(title, subtitle)
@@ -153,6 +177,10 @@ def action_bar(*buttons: QPushButton) -> QWidget:
         layout.addWidget(button)
     layout.addStretch(1)
     return host
+
+
+def control_with_hint(control: QWidget) -> ControlHint:
+    return ControlHint(control)
 
 
 def color_chip(color_value: str) -> QLabel:

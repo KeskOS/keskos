@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox, QComboBox, QLabel, QSlider
 
 from ..backend import FOCUS_POLICIES, TITLEBAR_LAYOUTS, WINDOW_BORDER_SIZES
-from ..widgets import SettingsSection, StatusLabel, action_bar, planned_combo, planned_field, populate_combo, select_combo_value, small_button
+from ..widgets import SettingsSection, StatusLabel, control_with_hint, planned_combo, planned_field, populate_combo, select_combo_value, small_button
 from .base import BasePage
 
 
@@ -20,7 +20,10 @@ class WindowsPage(BasePage):
     def _build_ui(self) -> None:
         status = SettingsSection("Backend status", "Core KWin window behavior is writable directly. Task-switcher details still use KDE's advanced KWin module.")
         self.task_switcher_status = StatusLabel("Loading backend status", "work")
-        status.add_row("Task switcher backend", "Current availability for Alt+Tab and tab-box settings.", self.task_switcher_status, keywords="task switcher backend status")
+        self.task_switcher_note = QLabel()
+        self.task_switcher_note.setWordWrap(True)
+        status.add_row("Backend", "Primary routing for Alt+Tab and task-switcher settings on this system.", self.task_switcher_status, keywords="task switcher backend status")
+        status.add_widget(self.task_switcher_note, keywords="task switcher kde handoff note")
         self.add_section(status)
 
         behavior = SettingsSection("Window behavior", "Control how windows focus, move, snap and react to clicks.")
@@ -74,18 +77,24 @@ class WindowsPage(BasePage):
 
         task_switcher = SettingsSection("Task Switcher", "Change how Alt+Tab and task switching works.")
         self.task_switcher_style = planned_combo(["Thumbnail Grid", "Compact List", "Present Windows"])
+        self.task_switcher_style_hint = control_with_hint(self.task_switcher_style)
         self.show_selected_window = QCheckBox("Enabled")
+        self.show_selected_window_hint = control_with_hint(self.show_selected_window)
         self.include_minimized = QCheckBox("Enabled")
+        self.include_minimized_hint = control_with_hint(self.include_minimized)
         self.all_desktops = QCheckBox("Enabled")
+        self.all_desktops_hint = control_with_hint(self.all_desktops)
         self.sort_order = planned_combo(["Recently used", "Stacking order", "Alphabetical"])
+        self.sort_order_hint = control_with_hint(self.sort_order)
         self.task_shortcut = planned_field("Alt+Tab")
-        task_switcher.add_row("Task switcher style", "Choose the preferred Alt+Tab presentation.", self.task_switcher_style, keywords="task switcher style alt tab")
-        task_switcher.add_row("Show selected window", "Preview the selected window while switching.", self.show_selected_window, keywords="show selected window alt tab")
-        task_switcher.add_row("Include minimized windows", "Include minimized windows in Alt+Tab results.", self.include_minimized, keywords="include minimized windows")
-        task_switcher.add_row("All desktops", "Include windows from all virtual desktops.", self.all_desktops, keywords="all desktops task switcher")
-        task_switcher.add_row("Sort order", "Choose how the switcher sorts windows.", self.sort_order, keywords="task switcher sort order")
-        task_switcher.add_row("Shortcut", "Current shortcut used to open the task switcher.", self.task_shortcut, keywords="task switcher shortcut")
-        advanced_task_switcher = small_button("Open Advanced Task Switcher Settings")
+        self.task_shortcut_hint = control_with_hint(self.task_shortcut)
+        task_switcher.add_row("Task switcher style", "Choose the preferred Alt+Tab presentation.", self.task_switcher_style_hint, keywords="task switcher style alt tab")
+        task_switcher.add_row("Show selected window", "Preview the selected window while switching.", self.show_selected_window_hint, keywords="show selected window alt tab")
+        task_switcher.add_row("Include minimized windows", "Include minimized windows in Alt+Tab results.", self.include_minimized_hint, keywords="include minimized windows")
+        task_switcher.add_row("All desktops", "Include windows from all virtual desktops.", self.all_desktops_hint, keywords="all desktops task switcher")
+        task_switcher.add_row("Sort order", "Choose how the switcher sorts windows.", self.sort_order_hint, keywords="task switcher sort order")
+        task_switcher.add_row("Shortcut", "Current shortcut used to open the task switcher.", self.task_shortcut_hint, keywords="task switcher shortcut")
+        advanced_task_switcher = small_button("Open KDE Task Switcher Settings")
         advanced_task_switcher.clicked.connect(lambda: self.controller.open_kcm("kwintabbox"))
         task_switcher.add_row("Advanced task switcher", "Use KDE's advanced task-switcher module for live KWin tab-box changes.", advanced_task_switcher, keywords="advanced task switcher kwintabbox")
         self.add_section(task_switcher)
@@ -113,13 +122,20 @@ class WindowsPage(BasePage):
         select_combo_value(self.double_click_action, "maximize")
         select_combo_value(self.middle_click_action, "lower")
         task_state = self.backend.task_switcher_state()
-        self.task_switcher_status.set_status(task_state["status"].summary, task_state["status"].ui_kind)
+        self.task_switcher_status.set_status(task_state["status"].display_label, task_state["status"].ui_kind)
+        self.task_switcher_note.setText(
+            "Task switcher settings are handled by KDE/KWin. Kesk Settings opens the advanced KDE task switcher module."
+        )
         self.include_minimized.setChecked(bool(task_state["include_minimized"]))
         self.all_desktops.setChecked(bool(task_state["all_desktops"]))
         self.show_selected_window.setChecked(True)
-        self.show_selected_window.setEnabled(False)
-        self.include_minimized.setEnabled(False)
-        self.all_desktops.setEnabled(False)
+        handoff_reason = "Use KDE Task Switcher Settings for live Alt+Tab changes."
+        self.task_switcher_style_hint.set_enabled(False, handoff_reason)
+        self.show_selected_window_hint.set_enabled(False, handoff_reason)
+        self.include_minimized_hint.set_enabled(False, handoff_reason)
+        self.all_desktops_hint.set_enabled(False, handoff_reason)
+        self.sort_order_hint.set_enabled(False, handoff_reason)
+        self.task_shortcut_hint.set_enabled(False, handoff_reason)
         self.finish_refresh()
 
     def apply_changes(self) -> None:

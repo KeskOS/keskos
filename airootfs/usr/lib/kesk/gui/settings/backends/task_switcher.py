@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .common import limited, result_payload
+from .common import kde_handoff, result_payload
 
 
 def is_available(_backend) -> bool:
@@ -12,7 +12,7 @@ def is_available(_backend) -> bool:
 def read_current(backend) -> dict[str, Any]:
     layout = backend.kread(backend.kwinrc, ("TabBox",), "LayoutName", "org.kde.breeze.desktop")
     return {
-        "status": limited(
+        "status": kde_handoff(
             "Task-switcher status is readable, but detailed Alt+Tab writes still use KDE's advanced module.",
             details=["The exact KWin tab-box keys vary between Plasma releases, so direct writes stay conservative."],
             advanced_module="kwintabbox",

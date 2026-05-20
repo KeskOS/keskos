@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .common import connected, limited, missing, result_payload
+from .common import intentional_handoff, missing, result_payload
 
 
 def is_available(backend) -> bool:
@@ -11,12 +11,16 @@ def is_available(backend) -> bool:
 
 def _status(backend):
     if backend.tools.get("kscreen-doctor"):
-        details = ["Resolution, scale, refresh rate, and orientation remain guarded and use KDE's advanced display module for live layout changes."]
+        details = ["Display layout and scaling stay in KDE's advanced display module to avoid unsafe black-screen situations."]
         if not backend.tools.get("brightnessctl"):
             details.append("Brightness control is unavailable because brightnessctl is not installed.")
-        return limited("Display state is readable through KScreen.", details=details, advanced_module="kcm_kscreen")
+        return intentional_handoff("Display state is readable through KScreen, but live changes stay in KDE.", details=details, advanced_module="kcm_kscreen")
     if backend.tools.get("qdbus6"):
-        return limited("Only limited display integration is available without kscreen-doctor.", missing_tools=["kscreen-doctor"], advanced_module="kcm_kscreen")
+        return intentional_handoff(
+            "Display state is only partially readable without kscreen-doctor, and live changes stay in KDE.",
+            details=["Display layout and scaling stay in KDE's advanced display module to avoid unsafe black-screen situations."],
+            advanced_module="kcm_kscreen",
+        )
     return missing("No direct display backend is available.", missing_tools=["kscreen-doctor", "qdbus6"], advanced_module="kcm_kscreen")
 
 
@@ -53,28 +57,17 @@ def read_current(backend) -> dict[str, Any]:
         "night_color": backend.as_bool(backend.custom_value("display_night_color"), False),
         "supports_live_layout": False,
         "supports_brightness": brightness is not None,
+        "apply_supported": False,
+        "handoff_reason": "Display layout and scaling are opened in KDE Display Settings to avoid unsafe display changes or black-screen risk.",
     }
 
 
 def apply_changes(backend, values: dict[str, Any]) -> dict[str, Any]:
-    details = ["Stored resolution, scale, refresh rate, and orientation preferences for the KDE display backend."]
-    warnings: list[str] = []
-    backend.kwrite(backend.kwinrc, ("NightColor",), "Active", backend.bool_text(bool(values.get("night_color", False))))
-    tool = backend.tools.get("brightnessctl")
-    if tool and values.get("brightness") is not None:
-        result = backend._run([tool, "set", f"{int(values.get('brightness', 100))}%"], capture=True, timeout=10)
-        if result is not None and result.returncode == 0:
-            details.append("Updated backlight brightness through brightnessctl.")
-        else:
-            warnings.append("Brightness could not be changed.")
-    elif values.get("brightness") is not None:
-        warnings.append("brightnessctl is not installed, so brightness stayed unchanged.")
     return result_payload(
         True,
-        "Display preferences updated.",
-        details=details,
-        warnings=warnings,
-        requires=["Use KDE's advanced display settings for live monitor layout, scale, refresh-rate, and orientation changes."],
+        "Display settings are intentionally handed off to KDE Display Settings.",
+        warnings=["Use KDE Display Settings for live layout, scaling, refresh-rate, orientation, and brightness changes on this system."],
+        requires=["Open KDE Display Settings to make safe display changes."],
     )
 
 

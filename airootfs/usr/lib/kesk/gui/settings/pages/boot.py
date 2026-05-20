@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QSlider, QSpinBox, QWidget
+from PySide6.QtWidgets import QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QSpinBox, QWidget
 
-from ..widgets import SettingsSection, StatusLabel, action_bar, populate_combo, select_combo_value, small_button
+from ..widgets import SettingsSection, StatusLabel, action_bar, control_with_hint, populate_combo, select_combo_value, small_button
 from .base import BasePage
 
 
@@ -18,31 +18,41 @@ class BootPage(BasePage):
     def _build_ui(self) -> None:
         status = SettingsSection("Backend status", "System-level boot and login changes are isolated behind a pkexec helper so the settings app itself stays unprivileged.")
         self.status_label = StatusLabel("Loading backend status", "work")
-        status.add_row("Boot/login backend", "Current availability for privileged SDDM and Plymouth changes.", self.status_label, keywords="boot login backend status")
+        self.status_note = QLabel()
+        self.status_note.setWordWrap(True)
+        status.add_row("Backend", "Primary routing for boot and login changes on this system.", self.status_label, keywords="boot login backend status")
+        status.add_widget(self.status_note, keywords="boot login admin note")
         self.add_section(status)
 
         info = SettingsSection("Detected system values", "Requires administrator permission for SDDM and Plymouth theme changes.")
         self.sddm_theme = QLabel()
         self.plymouth_theme = QLabel()
+        self.bootloader_label = QLabel()
         self.reboot_status = QLabel()
         info.add_row("Current login theme", "Detected SDDM login theme from current system configuration.", self.sddm_theme, keywords="sddm login theme")
         info.add_row("Current boot splash", "Detected Plymouth boot theme from current system configuration.", self.plymouth_theme, keywords="plymouth boot splash")
+        info.add_row("Bootloader", "Detected bootloader used for quiet-boot changes.", self.bootloader_label, keywords="bootloader grub systemd-boot")
         info.add_row("Reboot status", "Whether the system currently indicates a reboot is recommended.", self.reboot_status, keywords="reboot required")
         self.add_section(info)
 
         boot = SettingsSection("Boot splash", "Change boot splash, quiet boot and login screen behavior.")
         self.plymouth_selector = QComboBox()
+        self.plymouth_selector_hint = control_with_hint(self.plymouth_selector)
         self.boot_splash_duration = QSpinBox()
         self.boot_splash_duration.setRange(0, 20)
         self.boot_splash_duration.setSuffix(" s")
+        self.boot_splash_duration_hint = control_with_hint(self.boot_splash_duration)
         self.quiet_boot = QCheckBox("Enable quiet boot")
+        self.quiet_boot_hint = control_with_hint(self.quiet_boot)
         self.show_logs = QCheckBox("Show boot logs")
+        self.show_logs_hint = control_with_hint(self.show_logs)
         self.terminal_boot_text = QCheckBox("Show terminal-style boot text")
-        boot.add_row("Plymouth theme", "Choose the KeskOS boot animation or another installed Plymouth theme.", self.plymouth_selector, keywords="plymouth theme boot splash")
-        boot.add_row("Minimum splash duration", "Minimum time the splash remains visible before the session appears.", self.boot_splash_duration, keywords="minimum splash duration")
-        boot.add_row("Quiet boot", "Hides most boot messages and shows the KeskOS splash instead.", self.quiet_boot, keywords="quiet boot")
-        boot.add_row("Show boot logs", "Keep kernel and service messages visible during boot.", self.show_logs, keywords="boot logs")
-        boot.add_row("Terminal-style boot text", "Prefer a terminal-like boot text presentation when supported.", self.terminal_boot_text, keywords="terminal style boot text")
+        self.terminal_boot_text_hint = control_with_hint(self.terminal_boot_text)
+        boot.add_row("Plymouth theme", "Choose the KeskOS boot animation or another installed Plymouth theme.", self.plymouth_selector_hint, keywords="plymouth theme boot splash")
+        boot.add_row("Minimum splash duration", "Minimum time the splash remains visible before the session appears.", self.boot_splash_duration_hint, keywords="minimum splash duration")
+        boot.add_row("Quiet boot", "Hides most boot messages and shows the KeskOS splash instead.", self.quiet_boot_hint, keywords="quiet boot")
+        boot.add_row("Show boot logs", "Keep kernel and service messages visible during boot.", self.show_logs_hint, keywords="boot logs")
+        boot.add_row("Terminal-style boot text", "Prefer a terminal-like boot text presentation when supported.", self.terminal_boot_text_hint, keywords="terminal style boot text")
         boot_docs = small_button("Open Boot Docs")
         boot_docs.clicked.connect(lambda: self.controller.open_url("https://docs.keskos.org"))
         repair_theme = small_button("Open Repair Theme Options")
@@ -58,7 +68,9 @@ class BootPage(BasePage):
 
         login = SettingsSection("Login screen", "Change the login screen theme and background.")
         self.sddm_selector = QComboBox()
+        self.sddm_selector_hint = control_with_hint(self.sddm_selector)
         self.show_user_list = QCheckBox("Show user list on the login screen")
+        self.show_user_list_hint = control_with_hint(self.show_user_list)
         self.login_background = QLineEdit()
         background_button = small_button("Choose File")
         background_button.clicked.connect(self.choose_background)
@@ -68,9 +80,10 @@ class BootPage(BasePage):
         background_layout.setSpacing(8)
         background_layout.addWidget(self.login_background, 1)
         background_layout.addWidget(background_button)
-        login.add_row("SDDM theme", "Choose the login theme shown before the desktop session starts.", self.sddm_selector, keywords="sddm theme login")
-        login.add_row("Login background", "Pick a preferred background for future SDDM theme integration.", background_host, keywords="login background sddm")
-        login.add_row("Show user list", "Show local users on the login screen.", self.show_user_list, keywords="show user list login")
+        self.login_background_hint = control_with_hint(background_host)
+        login.add_row("SDDM theme", "Choose the login theme shown before the desktop session starts.", self.sddm_selector_hint, keywords="sddm theme login")
+        login.add_row("Login background", "Pick a preferred background for future SDDM theme integration.", self.login_background_hint, keywords="login background sddm")
+        login.add_row("Show user list", "Show local users on the login screen.", self.show_user_list_hint, keywords="show user list login")
         login_docs = small_button("Open Boot Docs")
         login_docs.clicked.connect(lambda: self.controller.open_url("https://docs.keskos.org"))
         login_theme = small_button("Open Repair Theme Options")
@@ -97,13 +110,14 @@ class BootPage(BasePage):
     def load_state(self) -> None:
         self.begin_refresh()
         state = self.backend.boot_state()
-        self.status_label.set_status(state["status"].summary, state["status"].ui_kind)
+        self.status_label.set_status("Requires admin", "warn")
         populate_combo(self.sddm_selector, self.backend.ensure_choice(str(state["sddm_theme"]), self.backend.sddm_theme_options()))
         populate_combo(self.plymouth_selector, self.backend.ensure_choice(str(state["plymouth_theme"]), self.backend.plymouth_theme_options()))
         select_combo_value(self.sddm_selector, str(state["sddm_theme"]))
         select_combo_value(self.plymouth_selector, str(state["plymouth_theme"]))
         self.sddm_theme.setText(str(state["sddm_theme"]))
         self.plymouth_theme.setText(str(state["plymouth_theme"]))
+        self.bootloader_label.setText(str(state.get("bootloader_detected", "unknown")))
         self.reboot_status.setText("Reboot recommended" if state.get("reboot_required") else "No reboot required")
         self.boot_splash_duration.setValue(int(state["boot_splash_min_duration"]))
         self.show_logs.setChecked(bool(state["show_boot_logs"]))
@@ -111,9 +125,52 @@ class BootPage(BasePage):
         self.show_user_list.setChecked(bool(state.get("show_user_list", True)))
         self.terminal_boot_text.setChecked(bool(state.get("terminal_boot_text", False)))
         self.login_background.setText(str(state["login_background"]))
-        privileged_available = state["status"].code in {"requires_admin", "connected"}
-        self.sddm_selector.setEnabled(privileged_available and self.sddm_selector.count() > 0)
-        self.plymouth_selector.setEnabled(privileged_available and self.plymouth_selector.count() > 0)
+
+        notes = [
+            "Boot and login settings need privileged access and installed SDDM/Plymouth assets. Bootloader editing is only enabled when a supported bootloader is detected.",
+        ]
+        if not bool(state.get("pkexec_found")):
+            notes.append("Install polkit for privileged settings.")
+        if not bool(state.get("helper_found")):
+            notes.append("The Kesk Settings helper is missing on this system.")
+        if not bool(state.get("plymouth_found")):
+            notes.append("Install Plymouth and the KeskOS Plymouth theme to enable boot splash settings.")
+        if not bool(state.get("quiet_boot_supported")):
+            notes.append("Bootloader not recognized. Manual configuration required.")
+        self.status_note.setText("\n\n".join(notes))
+
+        sddm_reason = "Boot and login settings need privileged access and installed SDDM/Plymouth assets."
+        if not bool(state.get("pkexec_found")):
+            sddm_reason = "Install polkit for privileged settings."
+        elif not bool(state.get("helper_found")):
+            sddm_reason = "The Kesk Settings helper is missing on this system."
+
+        plymouth_reason = "Plymouth tooling or KeskOS theme is missing on this system."
+        if not bool(state.get("pkexec_found")):
+            plymouth_reason = "Install polkit for privileged settings."
+        elif not bool(state.get("helper_found")):
+            plymouth_reason = "The Kesk Settings helper is missing on this system."
+
+        duration_reason = "Boot splash timing changes need privileged access through the Kesk Settings helper."
+        if not bool(state.get("pkexec_found")):
+            duration_reason = "Install polkit for privileged settings."
+        elif not bool(state.get("helper_found")):
+            duration_reason = "The Kesk Settings helper is missing on this system."
+
+        quiet_reason = "Bootloader not recognized. Manual configuration required."
+        if not bool(state.get("pkexec_found")):
+            quiet_reason = "Install polkit for privileged settings."
+        elif not bool(state.get("helper_found")):
+            quiet_reason = "The Kesk Settings helper is missing on this system."
+
+        self.sddm_selector_hint.set_enabled(bool(state.get("sddm_apply_supported")) and self.sddm_selector.count() > 0, sddm_reason)
+        self.login_background_hint.set_enabled(bool(state.get("sddm_apply_supported")) and self.sddm_selector.count() > 0, sddm_reason)
+        self.plymouth_selector_hint.set_enabled(bool(state.get("plymouth_apply_supported")) and self.plymouth_selector.count() > 0, plymouth_reason)
+        self.boot_splash_duration_hint.set_enabled(bool(state.get("helper_found")) and bool(state.get("pkexec_found")), duration_reason)
+        self.quiet_boot_hint.set_enabled(bool(state.get("quiet_boot_supported")), quiet_reason)
+        self.show_logs_hint.set_enabled(False, "Boot log presentation is not written directly on this backend.")
+        self.terminal_boot_text_hint.set_enabled(False, "Terminal-style boot text is not written directly on this backend.")
+        self.show_user_list_hint.set_enabled(False, "Login user-list behavior is not written directly by the current SDDM backend.")
         self.finish_refresh()
 
     def apply_changes(self) -> None:

@@ -179,6 +179,8 @@ Each backend-facing page now reports one of these states:
 
 - `Connected`
 - `Limited`
+- `KDE handoff`
+- `Intentional handoff`
 - `Missing tools`
 - `Requires admin`
 
@@ -329,15 +331,44 @@ Supported direct Dunst actions include:
 Useful commands:
 
 ```bash
-dunstctl reload
+notify-send "KESKOS" "Notification backend online."
+dunstctl is-paused
 dunstctl set-paused true
 dunstctl set-paused false
-notify-send "KESKOS" "Test notification"
-notify-send -u critical "KESKOS WARNING" "Critical notification test."
+dunstctl reload
 ```
 
 If duplicate notifications appear, KeskOS is likely running Dunst alongside KDE/Plasma notification integration.
 In that case, keep Dunst as the main notifier and adjust the KDE notification stack from the advanced KDE handoff button if needed.
+
+## Known Limitations And Handoffs
+
+| Page | Current backend | Limitation | Reason |
+| --- | --- | --- | --- |
+| Notifications | Dunst primary | Per-app rules use KDE handoff | Dunst handles global notification style, KDE handles app-specific notification rules |
+| Notifications | Dunst primary | DND/reload need dunstctl | Live control depends on Dunst tooling |
+| Notifications | Dunst primary | Test notifications need notify-send | Test button uses libnotify |
+| Notifications | Dunst primary | Duplicate notifications possible | Plasma notification integration may still be active |
+| Accessibility | KDE handoff | Advanced toggles not directly written | Safer to use KDE module |
+| Online Accounts | KDE handoff | Not directly edited | KDE account system is complex |
+| Task Switcher | KDE handoff | Not directly edited | KWin settings are safer through KDE module |
+| Display | KDE handoff only | No direct layout/scaling apply | Avoid black-screen risk |
+| Boot & Login | Privileged helper | Needs pkexec/assets/recognized bootloader | System-level changes are risky |
+
+Test commands:
+
+```bash
+notify-send "KESKOS" "Notification backend online."
+dunstctl is-paused
+dunstctl set-paused true
+dunstctl set-paused false
+dunstctl reload
+
+kcmshell6 kcm_notifications
+kcmshell6 kcm_access
+kcmshell6 kcm_kscreen
+kcmshell6 kwintabbox
+```
 
 ## Tools Used
 
@@ -394,6 +425,7 @@ kesk settings --dry-run
 - privileged helper/polkit visibility
 - backend summaries and missing optional tools
 - Dunst runtime status and Do Not Disturb availability
+- a limitations / handoff matrix for notifications, accessibility, online accounts, task switcher, display, and boot/login
 
 ## Start Menu Launcher
 

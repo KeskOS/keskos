@@ -20,12 +20,15 @@ class NetworkExtrasPage(BasePage):
     def _build_ui(self) -> None:
         accounts = SettingsSection("Online Accounts", "Connect cloud accounts for files, calendars and other services.")
         self.accounts_status = StatusLabel("Loading backend status", "work")
+        self.accounts_note = QLabel()
+        self.accounts_note.setWordWrap(True)
         self.connected_accounts = QLabel()
         self.connected_accounts.setWordWrap(True)
         self.sync_calendar = QCheckBox("Sync calendar")
         self.sync_files = QCheckBox("Sync files")
         self.sync_contacts = QCheckBox("Sync contacts")
-        accounts.add_row("Online Accounts backend", "Current availability for connected cloud accounts.", self.accounts_status, keywords="backend status online accounts")
+        accounts.add_row("Backend", "Primary routing for online account management on this system.", self.accounts_status, keywords="backend status online accounts")
+        accounts.add_widget(self.accounts_note, keywords="online accounts kde handoff note")
         accounts.add_row("Connected accounts", "Accounts currently visible through KDE or local config discovery.", self.connected_accounts, keywords="connected accounts")
         accounts.add_row("Calendar sync", "Allow connected calendars to sync into desktop apps.", self.sync_calendar, keywords="sync calendar")
         accounts.add_row("File sync", "Allow connected file providers to integrate with the desktop.", self.sync_files, keywords="sync files")
@@ -99,7 +102,10 @@ class NetworkExtrasPage(BasePage):
         vpn_state = self.backend.vpn_state()
         proxy_state = self.backend.proxy_state()
 
-        self.accounts_status.set_status(accounts_state["status"].summary, accounts_state["status"].ui_kind)
+        self.accounts_status.set_status(accounts_state["status"].display_label, accounts_state["status"].ui_kind)
+        self.accounts_note.setText(
+            "Online accounts are managed by KDE's account system. Kesk Settings opens the KDE module for adding, removing and syncing accounts."
+        )
         self.connected_accounts.setText("\n".join(f"- {item}" for item in accounts_state.get("connected_accounts", [])) or "No connected accounts were detected.")
         self.sync_calendar.setChecked(bool(accounts_state["sync_calendar"]))
         self.sync_files.setChecked(bool(accounts_state["sync_files"]))

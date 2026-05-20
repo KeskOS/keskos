@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..widgets import SettingsSection, StatusLabel, action_bar, populate_combo, select_combo_value, small_button
+from ..widgets import SettingsSection, StatusLabel, action_bar, control_with_hint, populate_combo, select_combo_value, small_button
 from .base import BasePage
 
 
@@ -44,7 +44,7 @@ class NotificationsPage(BasePage):
         status.add_row("Runtime notifier", "The desktop notification daemon used by KeskOS.", self.runtime_label, keywords="runtime notifier dunst")
         status.add_row("Dunst running", "Whether the Dunst daemon is active in the current session.", self.running_label, keywords="dunst running status")
         status.add_row("Config path", "User-level Dunst configuration file used by Kesk Settings.", self.config_path_label, keywords="dunst config path dunstrc")
-        status.add_row("Backend status", "Current availability for Dunst notification control.", self.status_label, keywords="notifications backend status dunst")
+        status.add_row("Backend", "Current availability for Dunst notification control.", self.status_label, keywords="notifications backend status dunst")
         status.add_widget(self.note_label, keywords="dunst kde duplicate notifications note")
         self.add_section(status)
 
@@ -53,7 +53,9 @@ class NotificationsPage(BasePage):
             "Enable notifications, quiet mode, and screen placement for the Dunst runtime.",
         )
         self.enable_notifications = QCheckBox("Enable notifications")
+        self.enable_notifications_hint = control_with_hint(self.enable_notifications)
         self.do_not_disturb = QCheckBox("Enable Do Not Disturb")
+        self.do_not_disturb_hint = control_with_hint(self.do_not_disturb)
         self.position = QComboBox()
         populate_combo(
             self.position,
@@ -75,8 +77,8 @@ class NotificationsPage(BasePage):
         self.font.setEditable(True)
         self.font.addItems(sorted(f"{family} 10" for family in QFontDatabase().families()))
 
-        behavior.add_row("Enable notifications", "Keep Dunst available in the user session and on login.", self.enable_notifications, keywords="enable notifications dunst autostart")
-        behavior.add_row("Do Not Disturb", "Pause popup delivery without changing the saved Dunst style.", self.do_not_disturb, keywords="do not disturb dunstctl")
+        behavior.add_row("Enable notifications", "Keep Dunst available in the user session and on login.", self.enable_notifications_hint, keywords="enable notifications dunst autostart")
+        behavior.add_row("Do Not Disturb", "Pause popup delivery without changing the saved Dunst style.", self.do_not_disturb_hint, keywords="do not disturb dunstctl")
         behavior.add_row("Notification position", "Choose where notification popups appear on screen.", self.position, keywords="notification position top right bottom left")
         behavior.add_row("Notification width", "Maximum Dunst popup width in pixels.", self.width, keywords="notification width")
         behavior.add_row("Notification height", "Maximum Dunst popup height in pixels.", self.height, keywords="notification height")
@@ -135,28 +137,43 @@ class NotificationsPage(BasePage):
             "Apply the branded preset, send test notifications, reload Dunst, or hand off to KDE's advanced module when needed.",
         )
         self.apply_preset_button = small_button("Apply KeskOS Notification Style", primary=True)
+        self.apply_preset_hint = control_with_hint(self.apply_preset_button)
         self.apply_preset_button.clicked.connect(self.apply_kesk_preset)
         self.test_button = small_button("Send Test Notification")
         self.test_button.clicked.connect(self.send_test_notification)
         self.critical_test_button = small_button("Send Critical Test")
         self.critical_test_button.clicked.connect(self.send_critical_notification)
+        self.test_actions_hint = control_with_hint(action_bar(self.test_button, self.critical_test_button))
         self.open_config_button = small_button("Open Dunst Config")
         self.open_config_button.clicked.connect(self.open_config)
         self.reload_button = small_button("Reload Notification Daemon")
         self.reload_button.clicked.connect(self.reload_dunst)
-        advanced = small_button("Open KDE Notification Settings")
+        self.reload_hint = control_with_hint(self.reload_button)
+        advanced = small_button("Open Advanced KDE Notification Settings")
         advanced.clicked.connect(lambda: self.controller.open_kcm("kcm_notifications"))
         actions.add_row(
-            "Dunst actions",
-            "Apply the branded Dunst preset, send test notifications, or reload the daemon.",
-            action_bar(self.apply_preset_button, self.test_button, self.critical_test_button),
-            keywords="apply keskos notification style send test notification notify send",
+            "Dunst preset",
+            "Apply the branded KeskOS notification style to the Dunst runtime config.",
+            self.apply_preset_hint,
+            keywords="apply keskos notification style dunst preset",
+        )
+        actions.add_row(
+            "Test notifications",
+            "Send a normal or critical test notification through notify-send.",
+            self.test_actions_hint,
+            keywords="send test notification notify send",
+        )
+        actions.add_row(
+            "Reload daemon",
+            "Reload the runtime notification daemon after changing the Dunst config.",
+            self.reload_hint,
+            keywords="reload notification daemon dunstctl",
         )
         actions.add_row(
             "Config and advanced settings",
             "Open the Dunst config file directly or use KDE's notification module for app-specific rules.",
-            action_bar(self.open_config_button, self.reload_button, advanced),
-            keywords="open dunst config reload notification daemon kde notifications advanced",
+            action_bar(self.open_config_button, advanced),
+            keywords="open dunst config kde notifications advanced",
         )
         self.add_section(actions)
 
@@ -250,7 +267,7 @@ class NotificationsPage(BasePage):
         self.begin_refresh()
         state = self.backend.notifications_state()
         status = state["status"]
-        self.status_label.set_status(status.summary, status.ui_kind)
+        self.status_label.set_status(str(state["backend_label"]), status.ui_kind)
         self.runtime_label.setText(str(state["runtime_notifier"]))
         self.running_label.setText("yes" if state["dunst_running"] else "no")
         self.config_path_label.setText(str(state["config_path"]))
@@ -287,12 +304,15 @@ class NotificationsPage(BasePage):
 
         config_editable = bool(state["config_editable"])
         self._set_control_enabled(config_editable)
-        self.enable_notifications.setEnabled(bool(state["dunst_available"]))
-        self.do_not_disturb.setEnabled(bool(state["dnd_supported"] and state["enable_notifications"]))
-        self.test_button.setEnabled(bool(state["test_supported"]))
-        self.critical_test_button.setEnabled(bool(state["test_supported"]))
-        self.reload_button.setEnabled(bool(state["reload_supported"]))
+        self.enable_notifications_hint.set_enabled(bool(state["dunst_available"]), str(state["enable_reason"]))
+        dnd_reason = str(state["dnd_reason"])
+        if bool(state["dnd_supported"]) and not bool(state["enable_notifications"]):
+            dnd_reason = "Enable notifications to use live Do Not Disturb."
+        self.do_not_disturb_hint.set_enabled(bool(state["dnd_supported"] and state["enable_notifications"]), dnd_reason)
+        self.test_actions_hint.set_enabled(bool(state["test_supported"]), str(state["test_reason"]))
+        self.reload_hint.set_enabled(bool(state["reload_supported"]), str(state["reload_reason"]))
         self.open_config_button.setEnabled(bool(state["open_config_supported"]))
+        self.apply_preset_hint.set_reason("" if config_editable else f"Dunst config is not writable at {state['config_path']}.")
 
         if not state["dnd_supported"]:
             self.do_not_disturb.setToolTip("Live Do Not Disturb control requires dunstctl and a running Dunst session.")

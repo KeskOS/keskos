@@ -21,11 +21,10 @@ POSITION_OPTIONS: tuple[tuple[str, str], ...] = (
     ("bottom-right", "Bottom right"),
 )
 
-KDE_DUPLICATE_WARNING = (
-    "KDE Plasma notifications may also be active. KeskOS uses Dunst; disable KDE notification integration if duplicate notifications appear."
+PLASMA_NOTIFICATION_WARNING = "Duplicate notifications may happen if Plasma notifications are also active."
+DUPLICATE_RISK_WARNING = (
+    "Dunst is active, but Plasma notification integration may also be active. If you see duplicate notifications, open KDE notification settings and disable conflicting notification behavior."
 )
-
-KDE_ADVANCED_DESCRIPTION = "Open KDE notification settings for per-application rules and advanced Plasma integration."
 
 KDESK_PRESET: dict[str, Any] = {
     "position": "top-right",
@@ -331,6 +330,57 @@ def is_running(backend) -> bool:
         if result is not None and result.returncode == 0:
             return True
     return False
+
+
+def _process_running(backend, name: str) -> bool:
+    pgrep = _tool(backend, "pgrep") or shutil.which("pgrep")
+    if not pgrep:
+        return False
+    result = backend._run([pgrep, "-x", name], capture=True, timeout=5)
+    return result is not None and result.returncode == 0
+
+
+def _qdbus_service_names(backend) -> set[str]:
+    qdbus = _tool(backend, "qdbus6")
+    if not qdbus:
+        return set()
+
+    commands = (
+        [qdbus],
+        [qdbus, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus.ListNames"],
+    )
+    for command in commands:
+        result = backend._run(command, capture=True, timeout=8)
+        if result is None or result.returncode != 0:
+            continue
+        names: set[str] = set()
+        for line in result.stdout.splitlines():
+            stripped = line.strip().strip('"').strip("'")
+            if stripped.startswith("org.") or stripped.startswith(":"):
+                names.add(stripped)
+        if names:
+            return names
+    return set()
+
+
+def _plasma_notification_state(backend) -> dict[str, Any]:
+    dbus_names = _qdbus_service_names(backend)
+    config_candidates = (
+        backend.paths.home / ".config" / "plasmanotifyrc",
+        backend.paths.home / ".config" / "knotifications5rc",
+        backend.paths.home / ".config" / "knotifications6rc",
+    )
+    config_matches = [str(path) for path in config_candidates if path.exists()]
+    plasmashell_running = _process_running(backend, "plasmashell")
+    plasmashell_dbus = "org.kde.plasmashell" in dbus_names
+    plasma_notification_active = plasmashell_running or plasmashell_dbus
+    return {
+        "plasmashell_running": plasmashell_running,
+        "plasmashell_dbus": plasmashell_dbus,
+        "notification_config_present": bool(config_matches),
+        "notification_config_paths": config_matches,
+        "plasma_notification_active": plasma_notification_active,
+    }
 
 
 def get_config_path(backend) -> Path:
@@ -656,7 +706,6 @@ def _backend_status(backend, settings: dict[str, Any]) -> BackendStatus:
     writable = bool(settings.get("config_writable"))
     details = [
         "KeskOS uses Dunst as its runtime notification daemon.",
-        KDE_DUPLICATE_WARNING,
     ]
     if running:
         details.append("Dunst is running in the current session.")
@@ -694,7 +743,23 @@ def read_current(backend, *, ensure_config: bool = True) -> dict[str, Any]:
     notify_send_available = bool(_tool(backend, "notify-send"))
     dnd_state = get_do_not_disturb(backend)
     running = is_running(backend)
+    plasma_state = _plasma_notification_state(backend)
+    duplicate_risk = running and bool(plasma_state["plasma_notification_active"])
     status = _backend_status(backend, settings)
+    notes = [
+        "KeskOS uses Dunst for runtime notifications. KDE notification settings are available as an advanced fallback.",
+    ]
+    hints: list[str] = []
+    if not dunstctl_available:
+        notes.append("Live Do Not Disturb and clean reload require dunstctl.")
+        hints.append("Install dunst or ensure dunstctl is available for live Do Not Disturb and reload.")
+    if not notify_send_available:
+        notes.append("Test notifications require notify-send.")
+        hints.append("Install libnotify for test notifications.")
+    if duplicate_risk:
+        notes.append(DUPLICATE_RISK_WARNING)
+    elif plasma_state["plasma_notification_active"]:
+        notes.append(PLASMA_NOTIFICATION_WARNING)
     settings.update(
         {
             "runtime_notifier": "Dunst",
@@ -702,16 +767,36 @@ def read_current(backend, *, ensure_config: bool = True) -> dict[str, Any]:
             "dunstctl_available": dunstctl_available,
             "notify_send_available": notify_send_available,
             "dunst_running": running,
+            "plasma_notification_active": bool(plasma_state["plasma_notification_active"]),
+            "plasma_notification_config_present": bool(plasma_state["notification_config_present"]),
+            "plasma_notification_config_paths": list(plasma_state["notification_config_paths"]),
+            "duplicate_notification_risk": duplicate_risk,
             "enable_notifications": _read_enable_notifications(backend),
             "do_not_disturb": bool(dnd_state) if dnd_state is not None else False,
             "dnd_supported": dnd_state is not None,
             "reload_supported": bool(dunstctl_available or (dunst_available and (not running or _tool(backend, "pkill") or shutil.which("pkill")))),
+            "clean_reload_supported": dunstctl_available,
             "test_supported": notify_send_available,
             "open_config_supported": True,
             "config_editable": bool(settings.get("config_writable")),
             "autostart_path": str(_autostart_path(backend)),
             "status": status,
-            "status_note": "\n".join(status.details),
+            "status_note": "\n\n".join(notes + hints),
+            "status_notes": notes,
+            "dependency_hints": hints,
+            "backend_label": status.display_label,
+            "enable_reason": "" if dunst_available else "Install dunst to manage runtime notifications.",
+            "dnd_reason": (
+                ""
+                if dnd_state is not None
+                else ("Live Do Not Disturb and clean reload require dunstctl." if not dunstctl_available else "Start Dunst to change Do Not Disturb live.")
+            ),
+            "reload_reason": (
+                ""
+                if bool(dunstctl_available or (dunst_available and (not running or _tool(backend, "pkill") or shutil.which("pkill"))))
+                else "Install dunst or ensure dunstctl is available for live Do Not Disturb and reload."
+            ),
+            "test_reason": "" if notify_send_available else "Install libnotify for test notifications.",
         }
     )
     return settings

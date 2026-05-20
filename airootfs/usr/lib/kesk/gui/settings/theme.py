@@ -157,6 +157,10 @@ QLabel#RowBody {{
     color: {MUTED};
     font-size: 12px;
 }}
+QLabel#InlineHint {{
+    color: {WARNING};
+    font-size: 11px;
+}}
 QPushButton, QToolButton, QComboBox, QSpinBox, QDoubleSpinBox {{
     background-color: {FIELD};
     color: {TEXT};

@@ -93,6 +93,8 @@ def print_dry_run(console: KeskConsole, backend: SettingsBackend) -> int:
         kind = {
             "connected": "ok",
             "limited": "work",
+            "kde_handoff": "work",
+            "intentional_handoff": "work",
             "missing": "skip",
             "requires_admin": "warn",
         }.get(code, "skip")
@@ -101,6 +103,38 @@ def print_dry_run(console: KeskConsole, backend: SettingsBackend) -> int:
             console.line(f"    missing tools: {', '.join(payload['missing_tools'])}")
         if payload["admin_required"]:
             console.line("    requires admin permission")
+    console.line()
+    console.section("LIMITATIONS / HANDOFF MATRIX")
+    matrix = report["limitations_matrix"]
+    console.line("Notifications:")
+    console.line(f"- runtime notifier: {matrix['notifications']['runtime_notifier']}")
+    console.line(f"- dunst found: {'yes' if matrix['notifications']['dunst_found'] else 'no'}")
+    console.line(f"- dunstctl found: {'yes' if matrix['notifications']['dunstctl_found'] else 'no'}")
+    console.line(f"- notify-send found: {'yes' if matrix['notifications']['notify_send_found'] else 'no'}")
+    console.line(f"- dunst running: {'yes' if matrix['notifications']['dunst_running'] else 'no'}")
+    console.line(f"- possible Plasma duplicate risk: {'yes' if matrix['notifications']['possible_plasma_duplicate_risk'] else 'no'}")
+    console.line(f"- per-app rules: {matrix['notifications']['per_app_rules']}")
+    console.line()
+    console.line("Accessibility:")
+    console.line(f"- direct backend: {matrix['accessibility']['direct_backend']}")
+    console.line(f"- advanced controls: {matrix['accessibility']['advanced_controls']}")
+    console.line()
+    console.line("Online Accounts:")
+    console.line(f"- backend: {matrix['online_accounts']['backend']}")
+    console.line()
+    console.line("Task Switcher:")
+    console.line(f"- backend: {matrix['task_switcher']['backend']}")
+    console.line()
+    console.line("Display:")
+    console.line(f"- backend: {matrix['display']['backend']}")
+    console.line(f"- reason: {matrix['display']['reason']}")
+    console.line()
+    console.line("Boot & Login:")
+    console.line(f"- pkexec found: {'yes' if matrix['boot_login']['pkexec_found'] else 'no'}")
+    console.line(f"- helper found: {'yes' if matrix['boot_login']['helper_found'] else 'no'}")
+    console.line(f"- SDDM assets found: {'yes' if matrix['boot_login']['sddm_assets_found'] else 'no'}")
+    console.line(f"- Plymouth found: {'yes' if matrix['boot_login']['plymouth_found'] else 'no'}")
+    console.line(f"- bootloader detected: {matrix['boot_login']['bootloader_detected']}")
     return 0
 
 

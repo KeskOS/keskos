@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QCheckBox, QComboBox, QLabel
 
-from ..widgets import SettingsSection, StatusLabel, action_bar, info_list, small_button
+from ..widgets import SettingsSection, StatusLabel, action_bar, control_with_hint, small_button
 from .base import BasePage
 
 
@@ -18,18 +18,23 @@ class BluetoothPage(BasePage):
     def _build_ui(self) -> None:
         status_section = SettingsSection("Backend status", "Bluetooth control depends on bluetoothctl, the bluetooth service, and an available adapter.")
         self.status_label = StatusLabel("Loading backend status", "work")
+        self.note_label = QLabel()
+        self.note_label.setWordWrap(True)
         self.adapter_status = QLabel()
         self.service_status = QLabel()
-        status_section.add_row("Bluetooth backend", "Current availability for Bluetooth management.", self.status_label, keywords="bluetooth backend status")
+        status_section.add_row("Backend", "Current availability for Bluetooth management.", self.status_label, keywords="bluetooth backend status")
         status_section.add_row("Adapter", "Detected Bluetooth adapter.", self.adapter_status, keywords="bluetooth adapter")
         status_section.add_row("Service", "Current bluetooth.service state.", self.service_status, keywords="bluetooth service")
+        status_section.add_widget(self.note_label, keywords="bluetooth dependency notes bluez service")
         self.add_section(status_section)
 
         controls = SettingsSection("Bluetooth adapter", "Pair and manage Bluetooth devices.")
         self.enabled = QCheckBox("Enable Bluetooth")
+        self.enabled_hint = control_with_hint(self.enabled)
         self.receive_files = QCheckBox("Allow Bluetooth file reception")
-        controls.add_row("Bluetooth radio", "Turn the Bluetooth radio on or off.", self.enabled, keywords="bluetooth on off radio")
-        controls.add_row("Receive files", "Allow file reception when a Bluetooth backend supports it.", self.receive_files, keywords="receive files bluetooth")
+        self.receive_files_hint = control_with_hint(self.receive_files)
+        controls.add_row("Bluetooth radio", "Turn the Bluetooth radio on or off.", self.enabled_hint, keywords="bluetooth on off radio")
+        controls.add_row("Receive files", "Allow file reception when a Bluetooth backend supports it.", self.receive_files_hint, keywords="receive files bluetooth")
         self.add_section(controls)
 
         paired = SettingsSection("Paired devices", "Trusted or remembered Bluetooth devices.")
@@ -37,26 +42,34 @@ class BluetoothPage(BasePage):
         self.paired_summary = QLabel()
         self.paired_summary.setWordWrap(True)
         connect_button = small_button("Connect")
+        self.connect_button = connect_button
         connect_button.clicked.connect(self.connect_selected)
         disconnect_button = small_button("Disconnect")
+        self.disconnect_button = disconnect_button
         disconnect_button.clicked.connect(self.disconnect_selected)
         trust_button = small_button("Trust")
+        self.trust_button = trust_button
         trust_button.clicked.connect(self.trust_selected)
         remove_button = small_button("Remove")
+        self.remove_button = remove_button
         remove_button.clicked.connect(self.remove_selected)
         paired.add_row("Known devices", "Select a paired device to connect, trust, or remove it.", self.paired_selector, keywords="paired devices bluetooth")
         paired.add_row("Device status", "Connection and trust information for the selected device.", self.paired_summary, keywords="paired device status")
-        paired.add_row("Device actions", "Connect, disconnect, trust, or remove the selected device.", action_bar(connect_button, disconnect_button, trust_button, remove_button), keywords="connect disconnect trust remove bluetooth")
+        self.paired_actions_hint = control_with_hint(action_bar(connect_button, disconnect_button, trust_button, remove_button))
+        paired.add_row("Device actions", "Connect, disconnect, trust, or remove the selected device.", self.paired_actions_hint, keywords="connect disconnect trust remove bluetooth")
         self.add_section(paired)
 
         nearby = SettingsSection("Nearby devices", "Detect devices nearby and pair them when the adapter is active.")
         self.nearby_selector = QComboBox()
         pair_button = small_button("Pair Selected Device")
+        self.pair_button = pair_button
         pair_button.clicked.connect(self.pair_selected)
         advanced_button = small_button("Open Bluetooth Settings")
         advanced_button.clicked.connect(lambda: self.controller.open_kcm("kcm_bluetooth"))
         nearby.add_row("Nearby devices", "Devices currently visible to bluetoothctl.", self.nearby_selector, keywords="nearby bluetooth devices pair")
-        nearby.add_row("Pairing tools", "Use direct pair actions or open KDE's Bluetooth module for advanced flows.", action_bar(pair_button, advanced_button), keywords="pair bluetooth advanced")
+        self.nearby_actions_hint = control_with_hint(pair_button)
+        nearby.add_row("Pair device", "Use a direct pair action when the adapter and Bluetooth service are available.", self.nearby_actions_hint, keywords="pair bluetooth")
+        nearby.add_row("Advanced Bluetooth", "Open KDE's Bluetooth module for advanced flows.", advanced_button, keywords="bluetooth advanced kde")
         self.add_section(nearby)
 
     def _current_paired_address(self) -> str:
@@ -69,14 +82,21 @@ class BluetoothPage(BasePage):
         self.begin_refresh()
         state = self.backend.bluetooth_state()
         status = state["status"]
-        self.status_label.set_status(status.summary, status.ui_kind)
+        self.status_label.set_status(status.display_label, status.ui_kind)
         self.adapter_status.setText(str(state["adapter_name"]))
         self.service_status.setText(str(state["service_state"]))
         self.enabled.setChecked(bool(state["enabled"]))
         self.receive_files.setChecked(bool(state["receive_files"]))
+        notes: list[str] = []
+        if status.code == "missing":
+            notes.append("Install bluez for Bluetooth device management.")
+        if status.code != "missing" and str(state["service_state"]) != "active":
+            notes.append("Bluetooth service is not running.")
+        self.note_label.setText("\n\n".join(notes or [status.summary]))
 
-        self.enabled.setEnabled(status.code != "missing")
-        self.receive_files.setEnabled(status.code != "missing")
+        tool_reason = "Install bluez for Bluetooth device management."
+        self.enabled_hint.set_enabled(status.code != "missing", tool_reason)
+        self.receive_files_hint.set_enabled(status.code != "missing", tool_reason)
 
         self.paired_selector.blockSignals(True)
         self.paired_selector.clear()
@@ -98,6 +118,20 @@ class BluetoothPage(BasePage):
             )
         else:
             self.paired_summary.setText("No paired Bluetooth devices were found.")
+        paired_reason = ""
+        nearby_reason = ""
+        if status.code == "missing":
+            paired_reason = tool_reason
+            nearby_reason = tool_reason
+        elif str(state["service_state"]) != "active":
+            paired_reason = "Bluetooth service is not running."
+            nearby_reason = "Bluetooth service is not running."
+        elif self.paired_selector.count() == 0:
+            paired_reason = "No paired Bluetooth device is available."
+        elif self.nearby_selector.count() == 0:
+            nearby_reason = "No nearby Bluetooth device is available."
+        self.paired_actions_hint.set_enabled(not bool(paired_reason), paired_reason)
+        self.nearby_actions_hint.set_enabled(not bool(nearby_reason), nearby_reason)
         self.finish_refresh()
 
     def apply_changes(self) -> None:

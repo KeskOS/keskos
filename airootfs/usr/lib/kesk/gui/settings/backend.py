@@ -2469,21 +2469,33 @@ class SettingsBackend:
         }
         writable = {name: path.parent.exists() and os.access(path.parent, os.W_OK) for name, path in config_paths.items()}
         plasma_desktop = os.environ.get("XDG_CURRENT_DESKTOP", "")
+        accessibility_state = self.accessibility_state()
+        bluetooth_state = self.bluetooth_state()
+        online_accounts_state = self.online_accounts_state()
+        vpn_state = self.vpn_state()
+        proxy_state = self.proxy_state()
+        file_associations_state = self.file_associations_state()
+        task_switcher_state = self.task_switcher_state()
         notifications_state = notifications_backend.read_current(self, ensure_config=False)
+        search_state = self.search_backend_state()
+        privacy_state = self.privacy_state()
+        audio_state = self.sound_state()
+        display_state = self.display_state()
+        boot_state = self.boot_state()
         backend_states = {
-            "accessibility": self.accessibility_state()["status"],
-            "bluetooth": self.bluetooth_state()["status"],
-            "online_accounts": self.online_accounts_state()["status"],
-            "vpn": self.vpn_state()["status"],
-            "proxy": self.proxy_state()["status"],
-            "file_associations": self.file_associations_state()["status"],
-            "task_switcher": self.task_switcher_state()["status"],
+            "accessibility": accessibility_state["status"],
+            "bluetooth": bluetooth_state["status"],
+            "online_accounts": online_accounts_state["status"],
+            "vpn": vpn_state["status"],
+            "proxy": proxy_state["status"],
+            "file_associations": file_associations_state["status"],
+            "task_switcher": task_switcher_state["status"],
             "notifications": notifications_state["status"],
-            "search": self.search_backend_state()["status"],
-            "privacy": self.privacy_state()["status"],
-            "audio": self.sound_state()["status"],
-            "display": self.display_state()["status"],
-            "boot_login": self.boot_state()["status"],
+            "search": search_state["status"],
+            "privacy": privacy_state["status"],
+            "audio": audio_state["status"],
+            "display": display_state["status"],
+            "boot_login": boot_state["status"],
         }
         return {
             "session_type": os.environ.get("XDG_SESSION_TYPE", "unknown"),
@@ -2499,7 +2511,11 @@ class SettingsBackend:
             "policy_present": privileged_backend.policy_path(self).is_file(),
             "notifications_runtime": {
                 "runtime_notifier": str(notifications_state["runtime_notifier"]),
+                "dunst_found": bool(notifications_state["dunst_available"]),
+                "dunstctl_found": bool(notifications_state["dunstctl_available"]),
+                "notify_send_found": bool(notifications_state["notify_send_available"]),
                 "running": bool(notifications_state["dunst_running"]),
+                "possible_duplicate_risk": bool(notifications_state.get("duplicate_notification_risk")),
                 "config_path": str(notifications_state["config_path"]),
                 "config_writable": bool(notifications_state["config_writable"]),
                 "do_not_disturb": notifications_state["do_not_disturb"] if notifications_state["dnd_supported"] else "unavailable",
@@ -2513,5 +2529,37 @@ class SettingsBackend:
                     "admin_required": status.admin_required,
                 }
                 for name, status in backend_states.items()
+            },
+            "limitations_matrix": {
+                "notifications": {
+                    "runtime_notifier": str(notifications_state["runtime_notifier"]).lower(),
+                    "dunst_found": bool(notifications_state["dunst_available"]),
+                    "dunstctl_found": bool(notifications_state["dunstctl_available"]),
+                    "notify_send_found": bool(notifications_state["notify_send_available"]),
+                    "dunst_running": bool(notifications_state["dunst_running"]),
+                    "possible_plasma_duplicate_risk": bool(notifications_state.get("duplicate_notification_risk")),
+                    "per_app_rules": "KDE handoff",
+                },
+                "accessibility": {
+                    "direct_backend": "limited",
+                    "advanced_controls": "KDE handoff",
+                },
+                "online_accounts": {
+                    "backend": "KDE handoff",
+                },
+                "task_switcher": {
+                    "backend": "KDE handoff",
+                },
+                "display": {
+                    "backend": "KDE handoff only",
+                    "reason": str(display_state.get("handoff_reason", "avoid black-screen risk")),
+                },
+                "boot_login": {
+                    "pkexec_found": bool(boot_state.get("pkexec_found")),
+                    "helper_found": bool(boot_state.get("helper_found")),
+                    "sddm_assets_found": bool(boot_state.get("sddm_assets_found")),
+                    "plymouth_found": bool(boot_state.get("plymouth_found")),
+                    "bootloader_detected": str(boot_state.get("bootloader_detected", "unknown")),
+                },
             },
         }

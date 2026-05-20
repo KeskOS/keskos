@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QCheckBox, QComboBox
+from PySide6.QtWidgets import QCheckBox, QComboBox, QLabel
 
-from ..widgets import SettingsSection, StatusLabel, action_bar, populate_combo, select_combo_value, small_button
+from ..widgets import SettingsSection, StatusLabel, control_with_hint, populate_combo, select_combo_value, small_button
 from .base import BasePage
 
 
@@ -17,41 +17,53 @@ class AccessibilityPage(BasePage):
 
     def _build_ui(self) -> None:
         status_section = SettingsSection("Backend status", "Accessibility direct writes stay conservative and hand off to KDE where the exact keys are still version-sensitive.")
-        self.status_label = StatusLabel("Loading backend status", "work")
-        status_section.add_row("Accessibility backend", "Current availability for assistive desktop settings.", self.status_label, keywords="backend status accessibility")
+        self.backend_label = StatusLabel("Loading backend status", "work")
+        self.status_label = StatusLabel("Loading direct-control status", "work")
+        self.note_label = QLabel()
+        self.note_label.setWordWrap(True)
+        status_section.add_row("Backend", "Primary routing for accessibility controls on this system.", self.backend_label, keywords="backend status accessibility")
+        status_section.add_row("Direct controls", "Current availability for the small set of accessibility options wired directly.", self.status_label, keywords="backend status accessibility direct limited")
+        status_section.add_widget(self.note_label, keywords="accessibility handoff note kde")
         self.add_section(status_section)
 
         section = SettingsSection("Assistive controls", "Adjust visual accessibility, motion, and keyboard-assistance preferences.")
         self.large_text = QCheckBox("Enabled")
         self.high_contrast = QCheckBox("Enabled")
+        self.high_contrast_hint = control_with_hint(self.high_contrast)
         self.screen_reader = QCheckBox("Enabled")
+        self.screen_reader_hint = control_with_hint(self.screen_reader)
         self.reduce_animations = QCheckBox("Enabled")
         self.sticky_keys = QCheckBox("Enabled")
+        self.sticky_keys_hint = control_with_hint(self.sticky_keys)
         self.slow_keys = QCheckBox("Enabled")
+        self.slow_keys_hint = control_with_hint(self.slow_keys)
         self.bounce_keys = QCheckBox("Enabled")
+        self.bounce_keys_hint = control_with_hint(self.bounce_keys)
         self.cursor_size = QComboBox()
         populate_combo(self.cursor_size, [("24", "24 px"), ("32", "32 px"), ("48", "48 px"), ("64", "64 px")])
 
         section.add_row("Large text", "Increase interface text scale for improved readability.", self.large_text, keywords="large text accessibility")
-        section.add_row("High contrast", "Switch to a higher-contrast appearance profile when directly supported.", self.high_contrast, keywords="high contrast")
-        section.add_row("Screen reader", "Enable assistive screen-reader integration when supported.", self.screen_reader, keywords="screen reader")
+        section.add_row("High contrast", "Switch to a higher-contrast appearance profile when directly supported.", self.high_contrast_hint, keywords="high contrast")
+        section.add_row("Screen reader", "Enable assistive screen-reader integration when supported.", self.screen_reader_hint, keywords="screen reader")
         section.add_row("Reduce animations", "Reduce desktop motion and long transitions.", self.reduce_animations, keywords="reduce animations motion")
-        section.add_row("Sticky keys", "Keep modifier keys active until another key is pressed.", self.sticky_keys, keywords="sticky keys")
-        section.add_row("Slow keys", "Require keys to be held for longer before they register.", self.slow_keys, keywords="slow keys")
-        section.add_row("Bounce keys", "Ignore repeated key presses for a short time.", self.bounce_keys, keywords="bounce keys")
+        section.add_row("Sticky keys", "Keep modifier keys active until another key is pressed.", self.sticky_keys_hint, keywords="sticky keys")
+        section.add_row("Slow keys", "Require keys to be held for longer before they register.", self.slow_keys_hint, keywords="slow keys")
+        section.add_row("Bounce keys", "Ignore repeated key presses for a short time.", self.bounce_keys_hint, keywords="bounce keys")
         section.add_row("Cursor size", "Choose a larger pointer size for easier tracking.", self.cursor_size, keywords="cursor size pointer")
-        advanced = small_button("Open Advanced Accessibility Settings")
+        advanced = small_button("Open KDE Accessibility Settings")
         advanced.clicked.connect(lambda: self.controller.open_kcm("kcm_access"))
-        keyboard = small_button("Open Keyboard Settings")
-        keyboard.clicked.connect(lambda: self.controller.open_kcm("kcm_keyboard"))
-        section.add_row("Advanced tools", "Use KDE's accessibility and keyboard modules for the rest of the assistive stack.", action_bar(advanced, keyboard), keywords="advanced accessibility keyboard")
+        section.add_row("Advanced tools", "Use KDE's accessibility module for high-contrast, keyboard-assistance, and screen-reader integration.", advanced, keywords="advanced accessibility keyboard")
         self.add_section(section)
 
     def load_state(self) -> None:
         self.begin_refresh()
         state = self.backend.accessibility_state()
         status = state["status"]
-        self.status_label.set_status(status.summary, status.ui_kind)
+        self.backend_label.set_status("KDE handoff", "work")
+        self.status_label.set_status(status.display_label, status.ui_kind)
+        self.note_label.setText(
+            "Basic appearance accessibility options may be controlled here. Advanced toggles like high contrast, sticky keys, slow keys, bounce keys and screen reader are handed off to KDE Accessibility settings."
+        )
         self.large_text.setChecked(bool(state["large_text"]))
         self.high_contrast.setChecked(bool(state["high_contrast"]))
         self.screen_reader.setChecked(bool(state["screen_reader"]))
@@ -62,12 +74,12 @@ class AccessibilityPage(BasePage):
         select_combo_value(self.cursor_size, str(int(state["cursor_size"])))
 
         self.large_text.setEnabled(bool(state["supports_large_text"]))
-        self.high_contrast.setEnabled(bool(state["supports_high_contrast"]))
-        self.screen_reader.setEnabled(bool(state["supports_screen_reader"]))
+        self.high_contrast_hint.set_enabled(bool(state["supports_high_contrast"]), "Use KDE Accessibility Settings for high contrast.")
+        self.screen_reader_hint.set_enabled(bool(state["supports_screen_reader"]), "Use KDE Accessibility Settings for screen reader control.")
         self.reduce_animations.setEnabled(bool(state["supports_reduce_animations"]))
-        self.sticky_keys.setEnabled(bool(state["supports_sticky_keys"]))
-        self.slow_keys.setEnabled(bool(state["supports_slow_keys"]))
-        self.bounce_keys.setEnabled(bool(state["supports_bounce_keys"]))
+        self.sticky_keys_hint.set_enabled(bool(state["supports_sticky_keys"]), "Use KDE Accessibility Settings for sticky keys.")
+        self.slow_keys_hint.set_enabled(bool(state["supports_slow_keys"]), "Use KDE Accessibility Settings for slow keys.")
+        self.bounce_keys_hint.set_enabled(bool(state["supports_bounce_keys"]), "Use KDE Accessibility Settings for bounce keys.")
         self.cursor_size.setEnabled(bool(state["supports_cursor_size"]))
         self.finish_refresh()
 
