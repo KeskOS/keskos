@@ -1,15 +1,11 @@
 # Kesk Settings GUI
 
-The graphical settings app is now documented in:
+KeskOS now uses the real KDE `systemsettings` app as the official settings UI.
+
+See:
 
 - `docs/kesk-settings.md`
 
-Use that document for:
+The old custom PySide GUI still exists only as a hidden experimental fallback through:
 
-- app behavior
-- supported categories
-- config storage
-- backups
-- `kesk settings --dry-run`
-- launcher behavior
-- known limitations
+- `kesk settings --experimental`

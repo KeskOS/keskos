@@ -1240,6 +1240,14 @@ class SettingsBackend:
         payload = bluetooth_backend.remove_device(self, address)
         return self._wrap_backend_payload(payload)
 
+    def bluetooth_start_service(self) -> ApplyResult:
+        payload = bluetooth_backend.start_service(self)
+        return self._wrap_backend_payload(payload)
+
+    def bluetooth_scan_devices(self) -> ApplyResult:
+        payload = bluetooth_backend.scan_devices(self)
+        return self._wrap_backend_payload(payload)
+
     def online_accounts_state(self) -> dict[str, Any]:
         return accounts_backend.read_current(self)
 
@@ -2525,13 +2533,28 @@ class SettingsBackend:
                 name: {
                     "code": status.code,
                     "summary": status.summary,
+                    "support_level": status.support_level,
                     "missing_tools": list(status.missing_tools),
                     "admin_required": status.admin_required,
                 }
                 for name, status in backend_states.items()
             },
-            "limitations_matrix": {
+            "backend_matrix": {
+                "accessibility": {
+                    "support": "KDE Handoff",
+                    "required_tools": ["kwriteconfig6", "kreadconfig6"],
+                    "config_paths": [str(self.kdeglobals), str(self.kcminputrc), str(self.kaccessrc), str(self.kcmaccessrc)],
+                    "direct_backend": "limited",
+                    "advanced_controls": "KDE module",
+                },
+                "bluetooth": {
+                    "support": bluetooth_state["status"].support_level,
+                    "bluetoothctl_found": bool(self.tools.get("bluetoothctl")),
+                    "service_status": str(bluetooth_state.get("service_state", "unknown")),
+                    "adapter_found": bool(bluetooth_state.get("adapter_present")),
+                },
                 "notifications": {
+                    "support": notifications_state["status"].support_level,
                     "runtime_notifier": str(notifications_state["runtime_notifier"]).lower(),
                     "dunst_found": bool(notifications_state["dunst_available"]),
                     "dunstctl_found": bool(notifications_state["dunstctl_available"]),
@@ -2540,25 +2563,43 @@ class SettingsBackend:
                     "possible_plasma_duplicate_risk": bool(notifications_state.get("duplicate_notification_risk")),
                     "per_app_rules": "KDE handoff",
                 },
-                "accessibility": {
-                    "direct_backend": "limited",
-                    "advanced_controls": "KDE handoff",
-                },
                 "online_accounts": {
+                    "support": online_accounts_state["status"].support_level,
                     "backend": "KDE handoff",
+                },
+                "networking": {
+                    "support": vpn_state["status"].support_level if vpn_state["status"].code != "missing" else proxy_state["status"].support_level,
+                    "nmcli_found": bool(self.tools.get("nmcli")),
+                    "networkmanager_status": str(vpn_state.get("networkmanager_status", "unknown")),
                 },
                 "task_switcher": {
+                    "support": task_switcher_state["status"].support_level,
                     "backend": "KDE handoff",
                 },
+                "sound": {
+                    "support": audio_state["status"].support_level,
+                    "wpctl_found": bool(self.tools.get("wpctl")),
+                    "pactl_found": bool(self.tools.get("pactl")),
+                },
+                "search": {
+                    "support": search_state["status"].support_level,
+                    "balooctl6_found": bool(self.tools.get("balooctl6")),
+                    "baloofilerc_found": self.settings_file("baloofilerc").is_file(),
+                },
                 "display": {
+                    "support": display_state["status"].support_level,
+                    "kscreen_doctor_found": bool(self.tools.get("kscreen-doctor")),
+                    "kcmshell6_found": bool(self.tools.get("kcmshell6") or self.tools.get("systemsettings")),
                     "backend": "KDE handoff only",
                     "reason": str(display_state.get("handoff_reason", "avoid black-screen risk")),
                 },
                 "boot_login": {
+                    "support": str(boot_state.get("support_level", "Unsupported")),
                     "pkexec_found": bool(boot_state.get("pkexec_found")),
                     "helper_found": bool(boot_state.get("helper_found")),
                     "sddm_assets_found": bool(boot_state.get("sddm_assets_found")),
-                    "plymouth_found": bool(boot_state.get("plymouth_found")),
+                    "plymouth_tooling_found": bool(boot_state.get("plymouth_tooling_available")),
+                    "plymouth_theme_found": bool(boot_state.get("plymouth_theme_present")),
                     "bootloader_detected": str(boot_state.get("bootloader_detected", "unknown")),
                 },
             },

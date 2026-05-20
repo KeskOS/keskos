@@ -1,5 +1,16 @@
 [kdeglobals][General]
-ColorScheme=KESKOS
+ColorScheme=KeskOSDark
+AccentColor=#ce6a35
+
+[kdeglobals][Icons]
+Theme=breeze-dark
+
+[kdeglobals][KDE]
+widgetStyle=kvantum
+
+[kcminputrc][Mouse]
+cursorTheme=breeze_cursors
+cursorSize=24
 
 [plasmarc][Theme]
 name=keskos-shell

@@ -33,6 +33,26 @@ if [[ -f /usr/bin/kesk-settings ]]; then
   chmod 0755 /usr/bin/kesk-settings
 fi
 
+if [[ -f /usr/bin/kesk-apply-theme ]]; then
+  chmod 0755 /usr/bin/kesk-apply-theme
+fi
+
+if [[ -f /usr/bin/kesk-theme-status ]]; then
+  chmod 0755 /usr/bin/kesk-theme-status
+fi
+
+if [[ -f /usr/bin/kesk-hide-kcms ]]; then
+  chmod 0755 /usr/bin/kesk-hide-kcms
+fi
+
+if [[ -f /usr/bin/kesk-restore-kcms ]]; then
+  chmod 0755 /usr/bin/kesk-restore-kcms
+fi
+
+if [[ -f /usr/bin/kesk-list-kcms ]]; then
+  chmod 0755 /usr/bin/kesk-list-kcms
+fi
+
 if [[ -f /usr/lib/kesk/kesk-settings-helper ]]; then
   chmod 0755 /usr/lib/kesk/kesk-settings-helper
 fi
@@ -62,6 +82,18 @@ systemctl enable sddm.service
 systemctl enable systemd-resolved.service
 systemctl enable qemu-guest-agent.service || true
 systemctl set-default graphical.target
+
+if [[ -x /usr/bin/kesk-hide-kcms ]]; then
+  /usr/bin/kesk-hide-kcms --system --quiet || true
+fi
+
+if command -v kcmshell6 >/dev/null 2>&1; then
+  install -d -m 0755 /usr/share/kesk/settings
+  kcmshell6 --list >/usr/share/kesk/settings/kcm-default-list.txt 2>/dev/null || true
+elif command -v kcmshell5 >/dev/null 2>&1; then
+  install -d -m 0755 /usr/share/kesk/settings
+  kcmshell5 --list >/usr/share/kesk/settings/kcm-default-list.txt 2>/dev/null || true
+fi
 
 TARGET_USER=liveuser /usr/local/bin/keskos-configure-user --offline --force || true
 

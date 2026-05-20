@@ -34,6 +34,26 @@ class AboutPage(BasePage):
         links.add_widget(action_bar(*buttons), keywords="website docs github downloads")
         self.add_section(links)
 
+        support = SettingsSection(
+            "Support Notes",
+            "Official support notes for settings that intentionally hand off to KDE or require system-level tooling.",
+        )
+        support_notes = [
+            "Dunst is the primary notification backend.",
+            "KDE still handles per-app notification rules.",
+            "Duplicate notifications may require manual KDE notification adjustment.",
+            "Advanced accessibility options are handled by KDE.",
+            "Online Accounts are handled by KDE.",
+            "Task Switcher is handled by KWin/KDE.",
+            "Display layout and scaling are intentionally opened in KDE Display Settings.",
+            "Boot & Login needs administrator permissions and real boot/login assets.",
+        ]
+        for note in support_notes:
+            label = QLabel(f"- {note}")
+            label.setWordWrap(True)
+            support.add_widget(label, keywords=note.lower())
+        self.add_section(support)
+
     def load_state(self) -> None:
         self.begin_refresh()
         rows = self.backend.about_rows()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QCheckBox, QComboBox, QLabel
 
-from ..widgets import SettingsSection, StatusLabel, control_with_hint, populate_combo, select_combo_value, small_button
+from ..widgets import SupportBadge, SettingsSection, StatusLabel, control_with_hint, populate_combo, select_combo_value, small_button
 from .base import BasePage
 
 
@@ -17,10 +17,12 @@ class AccessibilityPage(BasePage):
 
     def _build_ui(self) -> None:
         status_section = SettingsSection("Backend status", "Accessibility direct writes stay conservative and hand off to KDE where the exact keys are still version-sensitive.")
+        self.support_badge = SupportBadge("KDE Handoff", "work")
         self.backend_label = StatusLabel("Loading backend status", "work")
         self.status_label = StatusLabel("Loading direct-control status", "work")
         self.note_label = QLabel()
         self.note_label.setWordWrap(True)
+        status_section.add_row("Support level", "Official support level for accessibility controls on this system.", self.support_badge, keywords="accessibility support level kde handoff")
         status_section.add_row("Backend", "Primary routing for accessibility controls on this system.", self.backend_label, keywords="backend status accessibility")
         status_section.add_row("Direct controls", "Current availability for the small set of accessibility options wired directly.", self.status_label, keywords="backend status accessibility direct limited")
         status_section.add_widget(self.note_label, keywords="accessibility handoff note kde")
@@ -50,19 +52,20 @@ class AccessibilityPage(BasePage):
         section.add_row("Slow keys", "Require keys to be held for longer before they register.", self.slow_keys_hint, keywords="slow keys")
         section.add_row("Bounce keys", "Ignore repeated key presses for a short time.", self.bounce_keys_hint, keywords="bounce keys")
         section.add_row("Cursor size", "Choose a larger pointer size for easier tracking.", self.cursor_size, keywords="cursor size pointer")
-        advanced = small_button("Open KDE Accessibility Settings")
-        advanced.clicked.connect(lambda: self.controller.open_kcm("kcm_access"))
-        section.add_row("Advanced tools", "Use KDE's accessibility module for high-contrast, keyboard-assistance, and screen-reader integration.", advanced, keywords="advanced accessibility keyboard")
+        self.advanced_button = small_button("Open KDE Accessibility Settings")
+        self.advanced_button.clicked.connect(lambda: self.controller.open_kcm("kcm_access"))
+        section.add_row("Advanced tools", "Use KDE's accessibility module for high-contrast, keyboard-assistance, and screen-reader integration.", self.advanced_button, keywords="advanced accessibility keyboard")
         self.add_section(section)
 
     def load_state(self) -> None:
         self.begin_refresh()
         state = self.backend.accessibility_state()
         status = state["status"]
-        self.backend_label.set_status("KDE handoff", "work")
+        self.support_badge.set_support("KDE Handoff")
+        self.backend_label.set_status("KDE Handoff", "work")
         self.status_label.set_status(status.display_label, status.ui_kind)
         self.note_label.setText(
-            "Basic appearance accessibility options may be controlled here. Advanced toggles like high contrast, sticky keys, slow keys, bounce keys and screen reader are handed off to KDE Accessibility settings."
+            "Advanced accessibility options are handled by KDE Accessibility settings for safety and compatibility.\n\nBasic appearance accessibility options may be controlled here. Advanced toggles like high contrast, sticky keys, slow keys, bounce keys and screen reader are handed off to KDE Accessibility settings."
         )
         self.large_text.setChecked(bool(state["large_text"]))
         self.high_contrast.setChecked(bool(state["high_contrast"]))
@@ -81,6 +84,9 @@ class AccessibilityPage(BasePage):
         self.slow_keys_hint.set_enabled(bool(state["supports_slow_keys"]), "Use KDE Accessibility Settings for slow keys.")
         self.bounce_keys_hint.set_enabled(bool(state["supports_bounce_keys"]), "Use KDE Accessibility Settings for bounce keys.")
         self.cursor_size.setEnabled(bool(state["supports_cursor_size"]))
+        kcm_available = bool(self.backend.tools.get("kcmshell6") or self.backend.tools.get("systemsettings"))
+        self.advanced_button.setEnabled(kcm_available)
+        self.advanced_button.setToolTip("" if kcm_available else "kcmshell6 or systemsettings is required to open KDE Accessibility Settings.")
         self.finish_refresh()
 
     def apply_changes(self) -> None:

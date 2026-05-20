@@ -17,12 +17,12 @@ Pinned launchers come from the task manager defaults:
 - preferred browser
 - System Settings
 
-These pins use KeskOS desktop entry wrappers so the panel keeps the intended branded icons:
+The terminal, files, and browser pins use KeskOS desktop entry wrappers, while the settings pin now targets the real KDE System Settings desktop file:
 
 - `desktop/keskos-terminal.desktop`
 - `desktop/keskos-files.desktop`
 - `desktop/keskos-browser.desktop`
-- `desktop/keskos-settings.desktop`
+- `systemsettings.desktop`
 
 The workspace switcher shows:
 

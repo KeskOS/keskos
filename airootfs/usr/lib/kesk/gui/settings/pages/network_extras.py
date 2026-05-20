@@ -3,7 +3,8 @@ from __future__ import annotations
 from PySide6.QtWidgets import QCheckBox, QComboBox, QFileDialog, QLabel, QLineEdit
 
 from ..backend import ApplyResult
-from ..widgets import SettingsSection, StatusLabel, action_bar, populate_combo, select_combo_value, small_button
+from ..backends.common import support_level_for_status
+from ..widgets import SupportBadge, SettingsSection, StatusLabel, action_bar, populate_combo, select_combo_value, small_button
 from .base import BasePage
 
 
@@ -19,6 +20,7 @@ class NetworkExtrasPage(BasePage):
 
     def _build_ui(self) -> None:
         accounts = SettingsSection("Online Accounts", "Connect cloud accounts for files, calendars and other services.")
+        self.accounts_badge = SupportBadge("KDE Handoff", "work")
         self.accounts_status = StatusLabel("Loading backend status", "work")
         self.accounts_note = QLabel()
         self.accounts_note.setWordWrap(True)
@@ -27,15 +29,16 @@ class NetworkExtrasPage(BasePage):
         self.sync_calendar = QCheckBox("Sync calendar")
         self.sync_files = QCheckBox("Sync files")
         self.sync_contacts = QCheckBox("Sync contacts")
+        accounts.add_row("Support level", "Official support level for online account controls on this system.", self.accounts_badge, keywords="online accounts support level kde handoff")
         accounts.add_row("Backend", "Primary routing for online account management on this system.", self.accounts_status, keywords="backend status online accounts")
         accounts.add_widget(self.accounts_note, keywords="online accounts kde handoff note")
         accounts.add_row("Connected accounts", "Accounts currently visible through KDE or local config discovery.", self.connected_accounts, keywords="connected accounts")
         accounts.add_row("Calendar sync", "Allow connected calendars to sync into desktop apps.", self.sync_calendar, keywords="sync calendar")
         accounts.add_row("File sync", "Allow connected file providers to integrate with the desktop.", self.sync_files, keywords="sync files")
         accounts.add_row("Contact sync", "Allow contact synchronization for connected accounts.", self.sync_contacts, keywords="sync contacts")
-        accounts_button = small_button("Open KDE Online Accounts")
-        accounts_button.clicked.connect(lambda: self.controller.open_kcm("kcm_kaccounts"))
-        accounts.add_row("Account management", "Use KDE's online-accounts module to add or remove actual providers.", accounts_button, keywords="kde online accounts")
+        self.accounts_button = small_button("Open KDE Online Accounts")
+        self.accounts_button.clicked.connect(lambda: self.controller.open_kcm("kcm_kaccounts"))
+        accounts.add_row("Account management", "Use KDE's online-accounts module to add or remove actual providers.", self.accounts_button, keywords="kde online accounts")
         self.add_section(accounts)
 
         vpn = SettingsSection("VPN", "Add and manage VPN connections.")
@@ -61,6 +64,7 @@ class NetworkExtrasPage(BasePage):
         self.add_section(vpn)
 
         proxy = SettingsSection("Proxy", "Configure proxy servers for network access.")
+        self.proxy_badge = SupportBadge("Loading", "work")
         self.proxy_status = StatusLabel("Loading backend status", "work")
         self.proxy_mode = QComboBox()
         populate_combo(self.proxy_mode, [("none", "None"), ("manual", "Manual"), ("automatic", "Automatic")])
@@ -69,8 +73,9 @@ class NetworkExtrasPage(BasePage):
         self.socks_proxy = QLineEdit()
         self.no_proxy = QLineEdit()
         self.pac_url = QLineEdit()
-        advanced_proxy = small_button("Open KDE Proxy Settings")
-        advanced_proxy.clicked.connect(lambda: self.controller.open_kcm("proxy"))
+        self.advanced_proxy = small_button("Open KDE Proxy Settings")
+        self.advanced_proxy.clicked.connect(lambda: self.controller.open_kcm("proxy"))
+        proxy.add_row("Support level", "Official support level for proxy settings on this system.", self.proxy_badge, keywords="proxy support level")
         proxy.add_row("Proxy backend", "Current availability for KDE proxy settings.", self.proxy_status, keywords="backend status proxy")
         proxy.add_row("Proxy mode", "Choose whether the system uses no proxy, manual proxies, or a PAC URL.", self.proxy_mode, keywords="proxy mode")
         proxy.add_row("HTTP proxy", "Proxy used for plain HTTP requests.", self.http_proxy, keywords="http proxy")
@@ -78,7 +83,7 @@ class NetworkExtrasPage(BasePage):
         proxy.add_row("SOCKS proxy", "SOCKS proxy for apps that support it.", self.socks_proxy, keywords="socks proxy")
         proxy.add_row("No proxy exceptions", "Hosts and domains that should bypass the proxy.", self.no_proxy, keywords="no proxy exceptions")
         proxy.add_row("PAC URL", "URL for an automatic proxy configuration file.", self.pac_url, keywords="pac url")
-        proxy.add_row("Advanced proxy settings", "Open KDE's proxy module for deep per-app behavior.", advanced_proxy, keywords="kde proxy advanced")
+        proxy.add_row("Advanced proxy settings", "Open KDE's proxy module for deep per-app behavior.", self.advanced_proxy, keywords="kde proxy advanced")
         self.add_section(proxy)
 
     def _vpn_name(self) -> str:
@@ -102,10 +107,14 @@ class NetworkExtrasPage(BasePage):
         vpn_state = self.backend.vpn_state()
         proxy_state = self.backend.proxy_state()
 
+        self.accounts_badge.set_support("KDE Handoff")
         self.accounts_status.set_status(accounts_state["status"].display_label, accounts_state["status"].ui_kind)
         self.accounts_note.setText(
-            "Online accounts are managed by KDE's account system. Kesk Settings opens the KDE module for adding, removing and syncing accounts."
+            "Online accounts are managed through KDE's account provider system."
         )
+        kcm_available = bool(self.backend.tools.get("kcmshell6") or self.backend.tools.get("systemsettings"))
+        self.accounts_button.setEnabled(kcm_available)
+        self.accounts_button.setToolTip("" if kcm_available else "kcmshell6 or systemsettings is required to open KDE Online Accounts.")
         self.connected_accounts.setText("\n".join(f"- {item}" for item in accounts_state.get("connected_accounts", [])) or "No connected accounts were detected.")
         self.sync_calendar.setChecked(bool(accounts_state["sync_calendar"]))
         self.sync_files.setChecked(bool(accounts_state["sync_files"]))
@@ -120,7 +129,10 @@ class NetworkExtrasPage(BasePage):
         self.vpn_selector.blockSignals(False)
         self._update_selected_vpn_summary()
 
+        self.proxy_badge.set_support(support_level_for_status(proxy_state["status"]))
         self.proxy_status.set_status(proxy_state["status"].summary, proxy_state["status"].ui_kind)
+        self.advanced_proxy.setEnabled(kcm_available)
+        self.advanced_proxy.setToolTip("" if kcm_available else "kcmshell6 or systemsettings is required to open KDE Proxy Settings.")
         select_combo_value(self.proxy_mode, str(proxy_state["mode"]))
         self.http_proxy.setText(str(proxy_state["http_proxy"]))
         self.https_proxy.setText(str(proxy_state["https_proxy"]))

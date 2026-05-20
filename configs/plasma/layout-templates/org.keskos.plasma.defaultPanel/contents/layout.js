@@ -60,7 +60,7 @@ function resolvePanelBrowserDesktopId() {
 }
 
 function resolvePanelSettingsDesktopId() {
-    return firstExistingDesktopId(["keskos-settings.desktop"]) || resolveSettingsDesktopId();
+    return resolveSettingsDesktopId();
 }
 
 function resolveLauncherWidgetType() {

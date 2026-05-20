@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Kesk Settings
-Comment=Change KDE Plasma and KeskOS settings
-Exec=kesk settings
-Icon=/usr/share/keskos/panel-icons/settings.svg
+Name=Experimental Kesk Settings
+Comment=Legacy custom settings shell kept for KeskOS experiments
+Exec=kesk settings --experimental
+Icon=preferences-system
 Terminal=false
 StartupNotify=false
 Categories=Settings;System;KDE;

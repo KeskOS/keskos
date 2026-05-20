@@ -60,6 +60,10 @@ def _plymouth_theme() -> str:
     return parser.get("Daemon", "Theme", fallback="unavailable")
 
 
+def _plymouth_tool_available(backend) -> bool:
+    return bool(backend.tools.get("plymouth-set-default-theme"))
+
+
 def _boot_conf() -> Path:
     return Path("/etc/keskos/boot.conf")
 
@@ -142,16 +146,42 @@ def _plymouth_theme_found() -> bool:
     return any((base / name).is_dir() for name in KESK_THEME_NAMES)
 
 
+def _plymouth_theme_present(theme_name: str) -> bool:
+    if not theme_name or theme_name == "unavailable":
+        return False
+    return (Path("/usr/share/plymouth/themes") / theme_name).is_dir()
+
+
 def _plymouth_available(backend) -> bool:
-    return bool(backend.tools.get("plymouth-set-default-theme")) and _plymouth_theme_found()
+    return _plymouth_tool_available(backend) and _plymouth_theme_found()
+
+
+def _support_level(
+    *,
+    pkexec_available: bool,
+    helper_available: bool,
+    sddm_assets_found: bool,
+    plymouth_tooling_available: bool,
+    plymouth_theme_found: bool,
+    bootloader: str,
+) -> str:
+    if not pkexec_available or not helper_available:
+        return "Unsupported"
+    if not sddm_assets_found or not plymouth_tooling_available or not plymouth_theme_found or bootloader == "unknown":
+        return "Limited"
+    return "Requires Admin"
 
 
 def read_current(backend) -> dict[str, Any]:
     sddm_theme = _sddm_theme(backend)
+    plymouth_theme = _plymouth_theme()
     privileged_state = privileged.read_current(backend)
     helper_available = privileged.helper_path(backend).is_file()
     pkexec_available = bool(backend.tools.get("pkexec"))
     sddm_assets_found = _sddm_assets_found(backend)
+    plymouth_tooling_available = _plymouth_tool_available(backend)
+    plymouth_theme_found = _plymouth_theme_found()
+    plymouth_current_theme_present = _plymouth_theme_present(plymouth_theme)
     plymouth_found = _plymouth_available(backend)
     bootloader = _detect_bootloader()
     quiet_boot_supported = pkexec_available and helper_available and bootloader != "unknown"
@@ -159,6 +189,14 @@ def read_current(backend) -> dict[str, Any]:
     plymouth_apply_supported = pkexec_available and helper_available and plymouth_found
     return {
         "status": _status(backend),
+        "support_level": _support_level(
+            pkexec_available=pkexec_available,
+            helper_available=helper_available,
+            sddm_assets_found=sddm_assets_found,
+            plymouth_tooling_available=plymouth_tooling_available,
+            plymouth_theme_found=plymouth_theme_found,
+            bootloader=bootloader,
+        ),
         "privileged_status": privileged_state["status"],
         "helper_found": helper_available,
         "pkexec_found": pkexec_available,
@@ -166,12 +204,16 @@ def read_current(backend) -> dict[str, Any]:
         "sddm_assets_found": sddm_assets_found,
         "sddm_apply_supported": sddm_apply_supported,
         "sddm_background": _sddm_background(sddm_theme),
-        "plymouth_theme": _plymouth_theme(),
+        "plymouth_theme": plymouth_theme,
         "plymouth_found": plymouth_found,
+        "plymouth_tooling_available": plymouth_tooling_available,
+        "plymouth_theme_present": plymouth_theme_found,
+        "plymouth_current_theme_present": plymouth_current_theme_present,
         "plymouth_apply_supported": plymouth_apply_supported,
         "boot_splash_min_duration": _min_duration(backend),
         "bootloader_detected": bootloader,
         "quiet_boot_supported": quiet_boot_supported,
+        "requires_reboot_for_boot_changes": True,
         "quiet_boot": _quiet_boot_state(),
         "show_boot_logs": bool(backend.custom_value("boot_show_logs", False)),
         "show_user_list": bool(backend.custom_value("show_user_list", True)),

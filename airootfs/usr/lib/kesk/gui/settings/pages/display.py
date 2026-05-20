@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QSlider, QWidget
 
-from ..widgets import SettingsSection, StatusLabel, action_bar, control_with_hint, populate_combo, select_combo_value, small_button
+from ..widgets import SupportBadge, SettingsSection, StatusLabel, action_bar, control_with_hint, populate_combo, select_combo_value, small_button
 from .base import BasePage
 
 
@@ -17,9 +17,11 @@ class DisplayPage(BasePage):
 
     def _build_ui(self) -> None:
         status = SettingsSection("Backend status", "Live monitor layout changes stay in KDE's advanced display module to avoid unsafe black-screen situations.")
+        self.support_badge = SupportBadge("KDE Handoff", "work")
         self.status_label = StatusLabel("Loading backend status", "work")
         self.note_label = QLabel()
         self.note_label.setWordWrap(True)
+        status.add_row("Support level", "Official support level for display controls on this system.", self.support_badge, keywords="display support level kde handoff")
         status.add_row("Backend", "Primary routing for display layout and scaling on this system.", self.status_label, keywords="display backend status")
         status.add_widget(self.note_label, keywords="display intentional kde handoff note")
         self.add_section(status)
@@ -87,18 +89,19 @@ class DisplayPage(BasePage):
         self.add_section(controls)
 
         advanced = SettingsSection("Advanced display settings")
-        open_display = small_button("Open KDE Display Settings")
-        open_display.clicked.connect(lambda: self.controller.open_kcm("kcm_kscreen"))
-        advanced.add_widget(action_bar(open_display), keywords="advanced display kscreen resolution layout monitors")
+        self.open_display = small_button("Open KDE Display Settings")
+        self.open_display.clicked.connect(lambda: self.controller.open_kcm("kcm_kscreen"))
+        advanced.add_widget(action_bar(self.open_display), keywords="advanced display kscreen resolution layout monitors")
         advanced.add_note("Use the advanced KDE display module for live monitor layout changes, scaling confirmation, and multi-screen placement.")
         self.add_section(advanced)
 
     def load_state(self) -> None:
         self.begin_refresh()
         state = self.backend.display_state()
+        self.support_badge.set_support("KDE Handoff")
         self.status_label.set_status(state["status"].display_label, state["status"].ui_kind)
         self.note_label.setText(
-            "Display layout and scaling are opened in KDE Display Settings to avoid unsafe display changes or black-screen risk."
+            "Monitor layout and scaling are handled by KDE Display Settings to avoid unsafe display changes."
         )
         monitors = state.get("monitor_list") or []
         self.monitor_list.setText("\n".join(f"- {item}" for item in monitors) if monitors else "No monitor data reported.")
@@ -115,8 +118,11 @@ class DisplayPage(BasePage):
         self.refresh_rate_hint.set_enabled(False, reason)
         self.scale_hint.set_enabled(False, reason)
         self.orientation_hint.set_enabled(False, reason)
-        self.night_color_hint.set_enabled(False, reason)
-        self.brightness_hint.set_enabled(False, reason)
+        self.night_color_hint.set_enabled(False, str(state.get("night_color_reason", reason)))
+        self.brightness_hint.set_enabled(False, str(state.get("brightness_reason", reason)))
+        open_advanced_available = bool(self.backend.tools.get("kcmshell6") or self.backend.tools.get("systemsettings"))
+        self.open_display.setEnabled(open_advanced_available)
+        self.open_display.setToolTip("" if open_advanced_available else "kcmshell6 or systemsettings is required to open KDE Display Settings.")
         self.finish_refresh()
 
     def apply_changes(self) -> None:

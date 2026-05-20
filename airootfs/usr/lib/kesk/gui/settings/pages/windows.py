@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox, QComboBox, QLabel, QSlider
 
 from ..backend import FOCUS_POLICIES, TITLEBAR_LAYOUTS, WINDOW_BORDER_SIZES
-from ..widgets import SettingsSection, StatusLabel, control_with_hint, planned_combo, planned_field, populate_combo, select_combo_value, small_button
+from ..widgets import SupportBadge, SettingsSection, StatusLabel, control_with_hint, planned_combo, planned_field, populate_combo, select_combo_value, small_button
 from .base import BasePage
 
 
@@ -19,9 +19,11 @@ class WindowsPage(BasePage):
 
     def _build_ui(self) -> None:
         status = SettingsSection("Backend status", "Core KWin window behavior is writable directly. Task-switcher details still use KDE's advanced KWin module.")
+        self.task_switcher_badge = SupportBadge("KDE Handoff", "work")
         self.task_switcher_status = StatusLabel("Loading backend status", "work")
         self.task_switcher_note = QLabel()
         self.task_switcher_note.setWordWrap(True)
+        status.add_row("Support level", "Official support level for task-switcher controls on this system.", self.task_switcher_badge, keywords="task switcher support level kde handoff")
         status.add_row("Backend", "Primary routing for Alt+Tab and task-switcher settings on this system.", self.task_switcher_status, keywords="task switcher backend status")
         status.add_widget(self.task_switcher_note, keywords="task switcher kde handoff note")
         self.add_section(status)
@@ -94,9 +96,9 @@ class WindowsPage(BasePage):
         task_switcher.add_row("All desktops", "Include windows from all virtual desktops.", self.all_desktops_hint, keywords="all desktops task switcher")
         task_switcher.add_row("Sort order", "Choose how the switcher sorts windows.", self.sort_order_hint, keywords="task switcher sort order")
         task_switcher.add_row("Shortcut", "Current shortcut used to open the task switcher.", self.task_shortcut_hint, keywords="task switcher shortcut")
-        advanced_task_switcher = small_button("Open KDE Task Switcher Settings")
-        advanced_task_switcher.clicked.connect(lambda: self.controller.open_kcm("kwintabbox"))
-        task_switcher.add_row("Advanced task switcher", "Use KDE's advanced task-switcher module for live KWin tab-box changes.", advanced_task_switcher, keywords="advanced task switcher kwintabbox")
+        self.advanced_task_switcher = small_button("Open KDE Task Switcher Settings")
+        self.advanced_task_switcher.clicked.connect(lambda: self.controller.open_kcm("kwintabbox"))
+        task_switcher.add_row("Advanced task switcher", "Use KDE's advanced task-switcher module for live KWin tab-box changes.", self.advanced_task_switcher, keywords="advanced task switcher kwintabbox")
         self.add_section(task_switcher)
 
     def _sync_animation_label(self) -> None:
@@ -122,9 +124,10 @@ class WindowsPage(BasePage):
         select_combo_value(self.double_click_action, "maximize")
         select_combo_value(self.middle_click_action, "lower")
         task_state = self.backend.task_switcher_state()
+        self.task_switcher_badge.set_support("KDE Handoff")
         self.task_switcher_status.set_status(task_state["status"].display_label, task_state["status"].ui_kind)
         self.task_switcher_note.setText(
-            "Task switcher settings are handled by KDE/KWin. Kesk Settings opens the advanced KDE task switcher module."
+            "Task switcher behavior is managed by KWin. Advanced configuration opens KDE's task switcher module."
         )
         self.include_minimized.setChecked(bool(task_state["include_minimized"]))
         self.all_desktops.setChecked(bool(task_state["all_desktops"]))
@@ -136,6 +139,9 @@ class WindowsPage(BasePage):
         self.all_desktops_hint.set_enabled(False, handoff_reason)
         self.sort_order_hint.set_enabled(False, handoff_reason)
         self.task_shortcut_hint.set_enabled(False, handoff_reason)
+        kcm_available = bool(self.backend.tools.get("kcmshell6") or self.backend.tools.get("systemsettings"))
+        self.advanced_task_switcher.setEnabled(kcm_available)
+        self.advanced_task_switcher.setToolTip("" if kcm_available else "kcmshell6 or systemsettings is required to open KDE Task Switcher Settings.")
         self.finish_refresh()
 
     def apply_changes(self) -> None:

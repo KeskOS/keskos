@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..widgets import SettingsSection, StatusLabel, action_bar, control_with_hint, populate_combo, select_combo_value, small_button
+from ..backends.common import support_level_for_status
+from ..widgets import SupportBadge, SettingsSection, StatusLabel, action_bar, control_with_hint, populate_combo, select_combo_value, small_button
 from .base import BasePage
 
 
@@ -34,16 +35,20 @@ class NotificationsPage(BasePage):
             "Backend status",
             "Control KeskOS desktop notifications powered by Dunst.",
         )
+        self.support_badge = SupportBadge("Loading", "work")
         self.status_label = StatusLabel("Loading backend status", "work")
         self.runtime_label = QLabel()
         self.running_label = QLabel()
         self.config_path_label = QLabel()
         self.config_path_label.setWordWrap(True)
+        self.per_app_rules_label = QLabel("KDE handoff")
         self.note_label = QLabel()
         self.note_label.setWordWrap(True)
+        status.add_row("Support level", "Official support level for notification controls on this system.", self.support_badge, keywords="notifications support level native limited dunst")
         status.add_row("Runtime notifier", "The desktop notification daemon used by KeskOS.", self.runtime_label, keywords="runtime notifier dunst")
         status.add_row("Dunst running", "Whether the Dunst daemon is active in the current session.", self.running_label, keywords="dunst running status")
         status.add_row("Config path", "User-level Dunst configuration file used by Kesk Settings.", self.config_path_label, keywords="dunst config path dunstrc")
+        status.add_row("Per-app rules", "Application-specific notification rules remain available through KDE's advanced notifications module.", self.per_app_rules_label, keywords="per app rules kde handoff notifications")
         status.add_row("Backend", "Current availability for Dunst notification control.", self.status_label, keywords="notifications backend status dunst")
         status.add_widget(self.note_label, keywords="dunst kde duplicate notifications note")
         self.add_section(status)
@@ -149,8 +154,8 @@ class NotificationsPage(BasePage):
         self.reload_button = small_button("Reload Notification Daemon")
         self.reload_button.clicked.connect(self.reload_dunst)
         self.reload_hint = control_with_hint(self.reload_button)
-        advanced = small_button("Open Advanced KDE Notification Settings")
-        advanced.clicked.connect(lambda: self.controller.open_kcm("kcm_notifications"))
+        self.advanced_button = small_button("Open Advanced KDE Notification Settings")
+        self.advanced_button.clicked.connect(lambda: self.controller.open_kcm("kcm_notifications"))
         actions.add_row(
             "Dunst preset",
             "Apply the branded KeskOS notification style to the Dunst runtime config.",
@@ -172,7 +177,7 @@ class NotificationsPage(BasePage):
         actions.add_row(
             "Config and advanced settings",
             "Open the Dunst config file directly or use KDE's notification module for app-specific rules.",
-            action_bar(self.open_config_button, advanced),
+            action_bar(self.open_config_button, self.advanced_button),
             keywords="open dunst config kde notifications advanced",
         )
         self.add_section(actions)
@@ -225,7 +230,7 @@ class NotificationsPage(BasePage):
         if color.isValid():
             self._set_color_field(field, color.name())
 
-    def _set_control_enabled(self, enabled: bool) -> None:
+    def _set_control_enabled(self, enabled: bool, reason: str = "") -> None:
         widgets = (
             self.position,
             self.width,
@@ -262,16 +267,23 @@ class NotificationsPage(BasePage):
         )
         for widget in widgets:
             widget.setEnabled(enabled)
+            widget.setToolTip("" if enabled else reason)
 
     def load_state(self) -> None:
         self.begin_refresh()
         state = self.backend.notifications_state()
         status = state["status"]
+        self.support_badge.set_support(support_level_for_status(status))
         self.status_label.set_status(str(state["backend_label"]), status.ui_kind)
         self.runtime_label.setText(str(state["runtime_notifier"]))
         self.running_label.setText("yes" if state["dunst_running"] else "no")
         self.config_path_label.setText(str(state["config_path"]))
-        self.note_label.setText(str(state["status_note"]))
+        self.per_app_rules_label.setText("KDE Handoff")
+        note_parts = [
+            "KeskOS uses Dunst as the primary runtime notification daemon. Per-app notification rules remain available through KDE notification settings.",
+        ]
+        note_parts.extend(str(item) for item in state.get("status_notes", []) if item)
+        self.note_label.setText("\n\n".join(dict.fromkeys(note_parts)))
 
         self.enable_notifications.setChecked(bool(state["enable_notifications"]))
         self.do_not_disturb.setChecked(bool(state["do_not_disturb"]))
@@ -303,7 +315,8 @@ class NotificationsPage(BasePage):
         self._set_color_field(self.critical_frame, str(state["critical_frame_color"]))
 
         config_editable = bool(state["config_editable"])
-        self._set_control_enabled(config_editable)
+        config_reason = "" if config_editable else f"Dunst config is not writable at {state['config_path']}."
+        self._set_control_enabled(config_editable, config_reason)
         self.enable_notifications_hint.set_enabled(bool(state["dunst_available"]), str(state["enable_reason"]))
         dnd_reason = str(state["dnd_reason"])
         if bool(state["dnd_supported"]) and not bool(state["enable_notifications"]):
@@ -312,7 +325,10 @@ class NotificationsPage(BasePage):
         self.test_actions_hint.set_enabled(bool(state["test_supported"]), str(state["test_reason"]))
         self.reload_hint.set_enabled(bool(state["reload_supported"]), str(state["reload_reason"]))
         self.open_config_button.setEnabled(bool(state["open_config_supported"]))
-        self.apply_preset_hint.set_reason("" if config_editable else f"Dunst config is not writable at {state['config_path']}.")
+        kcm_available = bool(self.backend.tools.get("kcmshell6") or self.backend.tools.get("systemsettings"))
+        self.advanced_button.setEnabled(kcm_available)
+        self.advanced_button.setToolTip("" if kcm_available else "kcmshell6 or systemsettings is required to open KDE notification settings.")
+        self.apply_preset_hint.set_reason(config_reason)
 
         if not state["dnd_supported"]:
             self.do_not_disturb.setToolTip("Live Do Not Disturb control requires dunstctl and a running Dunst session.")

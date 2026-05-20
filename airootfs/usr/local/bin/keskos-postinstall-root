@@ -111,6 +111,20 @@ LOGO=archlinux-logo
 EOF
 }
 
+apply_kcm_cleanup_defaults() {
+  if [[ -x /usr/bin/kesk-hide-kcms ]]; then
+    /usr/bin/kesk-hide-kcms --system --quiet || true
+  fi
+
+  if command -v kcmshell6 >/dev/null 2>&1; then
+    install -d -m 0755 /usr/share/kesk/settings
+    kcmshell6 --list >/usr/share/kesk/settings/kcm-default-list.txt 2>/dev/null || true
+  elif command -v kcmshell5 >/dev/null 2>&1; then
+    install -d -m 0755 /usr/share/kesk/settings
+    kcmshell5 --list >/usr/share/kesk/settings/kcm-default-list.txt 2>/dev/null || true
+  fi
+}
+
 cleanup_live_bits() {
   rm -f /etc/sudoers.d/10-liveuser
   rm -f /etc/sddm.conf.d/keskos-live.conf
@@ -155,6 +169,7 @@ main() {
   write_installed_os_release
   write_installed_pacman_conf
   cleanup_live_bits
+  apply_kcm_cleanup_defaults
   target_user="$(detect_target_user || true)"
   log "Applying Calamares software loadout choices."
   apply_install_choices "$target_user"

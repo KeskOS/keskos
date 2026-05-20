@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=System Settings
+GenericName=System Settings
+Comment=Configure KDE Plasma and applications
+Exec=systemsettings
+Icon=preferences-system
+Terminal=false
+StartupNotify=true
+SingleMainWindow=true
+OnlyShowIn=KDE;
+NoDisplay=true
+Categories=Settings;System;KDE;

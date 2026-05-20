@@ -1,0 +1,16 @@
+[General]
+ColorScheme=KeskOSDark
+AccentColor=#ce6a35
+font=JetBrainsMono Nerd Font,10,-1,5,50,0,0,0,0,0
+fixed=JetBrainsMono Nerd Font,10,-1,5,50,0,0,0,0,0
+menuFont=JetBrainsMono Nerd Font,10,-1,5,50,0,0,0,0,0
+smallestReadableFont=JetBrainsMono Nerd Font,8,-1,5,50,0,0,0,0,0
+toolBarFont=JetBrainsMono Nerd Font,10,-1,5,50,0,0,0,0,0
+
+[Icons]
+Theme=breeze-dark
+
+[KDE]
+widgetStyle=kvantum
+LookAndFeelPackage=com.keskos.desktop
+SingleClick=false

@@ -3,6 +3,8 @@ aurorae
 base
 btop
 btrfs-progs
+breeze
+breeze-icons
 calamares
 cryptsetup
 device-mapper
@@ -24,6 +26,7 @@ kate
 kde-cli-tools
 konsole
 kpmcore
+kvantum
 librewolf-bin
 libpwquality
 linux
@@ -55,6 +58,8 @@ qt6-base
 qt6-declarative
 qt6-svg
 qt6-wayland
+qqc2-breeze-style
+qqc2-desktop-style
 quickshell
 pacman-contrib
 rsync

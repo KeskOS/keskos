@@ -15,7 +15,7 @@ HELP_ROWS = (
     ("kesk upgrade", "Update KeskOS packages."),
     ("kesk doctor", "Check system health."),
     ("kesk repair", "Repair KeskOS desktop and theme stack."),
-    ("kesk settings", "Open the KeskOS settings application."),
+    ("kesk settings", "Open KDE System Settings with KeskOS branding."),
 )
 
 
@@ -49,7 +49,6 @@ def main(args: Sequence[str], root: Path) -> int:
     doctor_path = root / "commands" / "doctor"
     repair_path = root / "commands" / "repair"
     settings_path = root / "commands" / "settings"
-    gui_settings_path = root.parents[1] / "bin" / "kesk-settings"
 
     if not args:
         return show_help(console)
@@ -89,18 +88,6 @@ def main(args: Sequence[str], root: Path) -> int:
     if command == "settings":
         if not settings_path.exists():
             return show_help(console, "settings command is missing from /usr/lib/kesk/commands.")
-        if extra_args and extra_args[0] in {"--help", "-h", "help", "--dry-run"}:
-            return exec_command(settings_path, extra_args)
-        if extra_args and extra_args[0] == "--gui":
-            if gui_settings_path.exists():
-                return exec_command(gui_settings_path, extra_args[1:])
-            return show_help(console, "kesk-settings is missing from /usr/bin.")
-        if extra_args and extra_args[0] == "--tui":
-            return exec_command(settings_path, extra_args[1:])
-        if extra_args:
-            return exec_command(settings_path, extra_args)
-        if (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")) and gui_settings_path.exists():
-            return exec_command(gui_settings_path, extra_args)
         return exec_command(settings_path, extra_args)
 
     return show_help(console, f"unknown command: {command}")

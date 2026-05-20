@@ -1,157 +1,218 @@
 from __future__ import annotations
 
+import configparser
 import os
 from pathlib import Path
+import shutil
+import subprocess
 from typing import Sequence
 
-from common import KeskConsole, SessionLogger
-from gui.settings.backend import SettingsBackend, resolve_runtime_paths
+from common import KeskConsole
+
+
+OFFICIAL_COLOR_SCHEME = "KeskOSDark"
+OFFICIAL_LAUNCHER = "kesk-settings.desktop"
+UPSTREAM_LAUNCHER_OVERRIDE = "systemsettings.desktop"
+EXPERIMENTAL_LAUNCHER = "keskos-settings.desktop"
 
 
 def has_graphical_session() -> bool:
     return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
-def print_help(console: KeskConsole, error: str | None = None) -> int:
+def command_path(name: str) -> str | None:
+    return shutil.which(name)
+
+
+def read_ini_value(path: Path, section: str, option: str) -> str | None:
+    if not path.is_file():
+        return None
+
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.optionxform = str
+    try:
+        with path.open(encoding="utf-8", errors="replace") as handle:
+            parser.read_file(handle)
+    except (OSError, configparser.Error):
+        return None
+
+    if not parser.has_section(section):
+        return None
+    if not parser.has_option(section, option):
+        return None
+    return parser.get(section, option).strip()
+
+
+def resolve_usr_root(root: Path) -> Path:
+    return root.parents[1]
+
+
+def resolve_source_root(root: Path) -> Path | None:
+    candidates = [Path.cwd(), root, *root.parents]
+    seen: set[Path] = set()
+
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if (candidate / "configs").is_dir() and (candidate / "desktop").is_dir():
+            return candidate
+    return None
+
+
+def resolve_experimental_gui(root: Path) -> Path:
+    return resolve_usr_root(root) / "bin" / "kesk-settings"
+
+
+def launch_program(command: Sequence[str]) -> int:
+    if os.name == "nt":
+        return subprocess.call(list(command))
+    os.execv(command[0], list(command))
+    return 1
+
+
+def first_existing_path(paths: Sequence[Path]) -> Path:
+    for path in paths:
+        if path.exists():
+            return path
+    return paths[0]
+
+
+def show_help(console: KeskConsole, error: str | None = None) -> int:
     console.clear()
-    console.header("KESK SETTINGS", "GRAPHICAL KDE + KESKOS SETTINGS APPLICATION")
+    console.header("KESK SETTINGS", "REAL KDE SYSTEM SETTINGS LAUNCHER")
     console.line()
     if error:
         console.status("warn", error)
         console.line()
     console.line("Usage:")
     console.line("kesk settings")
+    console.line("kesk settings <kcm-module>")
     console.line("kesk settings --dry-run")
+    console.line("kesk settings --experimental")
     console.line()
     console.line("What it does:")
-    console.line("- Opens the graphical Kesk Settings app in a KDE graphical session")
-    console.line("- Changes KDE Plasma user settings where implemented")
-    console.line("- Stores KeskOS-specific preferences in ~/.config/kesk/settings.json")
-    console.line("- Creates settings backups in ~/.local/state/kesk/settings-backups/")
+    console.line("- Opens the real KDE System Settings application (`systemsettings`)")
+    console.line("- Keeps KDE KCM pages intact instead of replacing them with a custom dashboard")
+    console.line("- Passes an optional KCM module name through to System Settings")
+    console.line("- Keeps the old custom Kesk Settings GUI hidden behind `--experimental`")
     console.line()
-    console.line("What it does not include:")
-    console.line("- Repair tools")
-    console.line("- Upgrade dashboards")
-    console.line("- Docker or developer shortcuts")
-    console.line("- Server or package-manager launchers")
+    console.line("Useful KDE commands:")
+    console.line("- `kcmshell6 --list`")
+    console.line("- `kcmshell6 <module-name>`")
     return 0 if error is None else 1
 
 
-def print_requires_graphics(console: KeskConsole) -> int:
+def show_requires_graphics(console: KeskConsole, label: str) -> int:
     console.clear()
     console.header("KESK SETTINGS", "GRAPHICAL SESSION REQUIRED")
     console.line()
-    console.status("warn", "Kesk Settings requires a graphical session.")
+    console.status("warn", f"{label} requires a graphical KDE session.")
     console.line("Run this from KDE Plasma on X11 or Wayland.")
-    console.line("Use `kesk settings --dry-run` for backend detection details.")
+    console.line("Use `kesk settings --dry-run` to inspect the installed launcher and theme wiring.")
     return 1
 
 
-def print_dry_run(console: KeskConsole, backend: SettingsBackend) -> int:
-    report = backend.dry_run_report()
+def print_dry_run(console: KeskConsole, root: Path) -> int:
+    usr_root = resolve_usr_root(root)
+    source_root = resolve_source_root(root)
+    home = Path.home()
+    kdeglobals = home / ".config" / "kdeglobals"
+    kcminputrc = home / ".config" / "kcminputrc"
+    launchers_dir = usr_root / "share" / "applications"
+    local_launchers_dir = usr_root / "local" / "share" / "applications"
+    color_dir = usr_root / "share" / "color-schemes"
+
+    official_color_paths = [color_dir / f"{OFFICIAL_COLOR_SCHEME}.colors"]
+    legacy_color_paths = [color_dir / "KESKOS.colors"]
+    official_launcher_paths = [launchers_dir / OFFICIAL_LAUNCHER]
+    upstream_override_paths = [local_launchers_dir / UPSTREAM_LAUNCHER_OVERRIDE, launchers_dir / UPSTREAM_LAUNCHER_OVERRIDE]
+    experimental_launcher_paths = [launchers_dir / EXPERIMENTAL_LAUNCHER]
+
+    if source_root is not None:
+        official_color_paths.append(source_root / "configs" / "kde" / f"{OFFICIAL_COLOR_SCHEME}.colors")
+        legacy_color_paths.append(source_root / "configs" / "kde" / "keskos.colors")
+        official_launcher_paths.append(source_root / "desktop" / OFFICIAL_LAUNCHER)
+        upstream_override_paths.append(source_root / "desktop" / UPSTREAM_LAUNCHER_OVERRIDE)
+        experimental_launcher_paths.append(source_root / "desktop" / EXPERIMENTAL_LAUNCHER)
+
     console.clear()
-    console.header("KESK SETTINGS", "BACKEND DRY RUN")
+    console.header("KESK SETTINGS", "SYSTEM SETTINGS DRY RUN")
     console.line()
-    console.status("ok", f"session type: {report['session_type']}")
-    console.status("ok", f"plasma version: {report['plasma_version']}")
-    console.status("ok", f"qt version: {report['qt_version']}")
-    console.status("ok" if report["plasma_session_detected"] else "warn", f"plasma session detected: {'yes' if report['plasma_session_detected'] else 'no'}")
-    console.status("ok" if report["graphical_session_available"] else "warn", f"graphical session available: {'yes' if report['graphical_session_available'] else 'no'}")
-    console.line()
-    console.section("SESSION")
-    console.line(f"DISPLAY         {report['display'] or 'unset'}")
-    console.line(f"WAYLAND_DISPLAY {report['wayland_display'] or 'unset'}")
+    console.status("ok" if has_graphical_session() else "warn", f"graphical session available: {'yes' if has_graphical_session() else 'no'}")
+    console.status("ok" if os.environ.get("XDG_CURRENT_DESKTOP") else "warn", f"desktop: {os.environ.get('XDG_CURRENT_DESKTOP') or 'unset'}")
+    console.status("ok" if os.environ.get("XDG_SESSION_TYPE") else "warn", f"session type: {os.environ.get('XDG_SESSION_TYPE') or 'unset'}")
     console.line()
     console.section("TOOLS")
-    for name, present in sorted(report["tools"].items()):
-        console.status("ok" if present else "skip", f"{name}: {'found' if present else 'missing'}")
+    for tool in ("systemsettings", "kcmshell6", "plasma-apply-colorscheme", "kwriteconfig6"):
+        path = command_path(tool)
+        console.status("ok" if path else "warn", f"{tool}: {path or 'missing'}")
     console.line()
-    console.section("CONFIG PATHS")
-    for name, path in report["config_paths"].items():
-        writable = report["writable"].get(name, False)
-        console.status("ok" if writable else "warn", f"{name}: {path}")
+    console.section("THEME ASSETS")
+    for label, path in (
+        ("Official color scheme", first_existing_path(official_color_paths)),
+        ("Legacy color alias", first_existing_path(legacy_color_paths)),
+        ("Official launcher", first_existing_path(official_launcher_paths)),
+        ("Upstream launcher override", first_existing_path(upstream_override_paths)),
+        ("Experimental launcher", first_existing_path(experimental_launcher_paths)),
+        ("Experimental GUI", resolve_experimental_gui(root)),
+    ):
+        console.status("ok" if path.exists() else "warn", f"{label}: {path}")
     console.line()
-    console.section("PRIVILEGED")
-    console.status("ok" if report["policy_present"] else "warn", f"polkit policy present: {'yes' if report['policy_present'] else 'no'}")
+    console.section("ACTIVE USER SETTINGS")
+    console.line(f"ColorScheme       {read_ini_value(kdeglobals, 'General', 'ColorScheme') or 'unset'}")
+    console.line(f"widgetStyle       {read_ini_value(kdeglobals, 'KDE', 'widgetStyle') or 'unset'}")
+    console.line(f"LookAndFeel       {read_ini_value(kdeglobals, 'KDE', 'LookAndFeelPackage') or 'unset'}")
+    console.line(f"Icon theme        {read_ini_value(kdeglobals, 'Icons', 'Theme') or 'unset'}")
+    console.line(f"Cursor theme      {read_ini_value(kcminputrc, 'Mouse', 'cursorTheme') or 'unset'}")
+    console.line(f"Cursor size       {read_ini_value(kcminputrc, 'Mouse', 'cursorSize') or 'unset'}")
     console.line()
-    console.section("NOTIFICATIONS")
-    notifications = report["notifications_runtime"]
-    console.status("ok", f"runtime notifier: {notifications['runtime_notifier']}")
-    console.status("ok" if notifications["running"] else "warn", f"dunst running: {'yes' if notifications['running'] else 'no'}")
-    console.status("ok" if notifications["config_writable"] else "warn", f"dunstrc path: {notifications['config_path']}")
-    if notifications["dnd_supported"]:
-        console.status(
-            "ok" if notifications["do_not_disturb"] else "work",
-            f"do not disturb: {'enabled' if notifications['do_not_disturb'] else 'disabled'}",
-        )
-    else:
-        console.status("skip", "do not disturb: unavailable")
-    console.line()
-    console.section("BACKENDS")
-    for name, payload in sorted(report["backend_statuses"].items()):
-        code = payload["code"]
-        kind = {
-            "connected": "ok",
-            "limited": "work",
-            "kde_handoff": "work",
-            "intentional_handoff": "work",
-            "missing": "skip",
-            "requires_admin": "warn",
-        }.get(code, "skip")
-        console.status(kind, f"{name}: {payload['summary']}")
-        if payload["missing_tools"]:
-            console.line(f"    missing tools: {', '.join(payload['missing_tools'])}")
-        if payload["admin_required"]:
-            console.line("    requires admin permission")
-    console.line()
-    console.section("LIMITATIONS / HANDOFF MATRIX")
-    matrix = report["limitations_matrix"]
-    console.line("Notifications:")
-    console.line(f"- runtime notifier: {matrix['notifications']['runtime_notifier']}")
-    console.line(f"- dunst found: {'yes' if matrix['notifications']['dunst_found'] else 'no'}")
-    console.line(f"- dunstctl found: {'yes' if matrix['notifications']['dunstctl_found'] else 'no'}")
-    console.line(f"- notify-send found: {'yes' if matrix['notifications']['notify_send_found'] else 'no'}")
-    console.line(f"- dunst running: {'yes' if matrix['notifications']['dunst_running'] else 'no'}")
-    console.line(f"- possible Plasma duplicate risk: {'yes' if matrix['notifications']['possible_plasma_duplicate_risk'] else 'no'}")
-    console.line(f"- per-app rules: {matrix['notifications']['per_app_rules']}")
-    console.line()
-    console.line("Accessibility:")
-    console.line(f"- direct backend: {matrix['accessibility']['direct_backend']}")
-    console.line(f"- advanced controls: {matrix['accessibility']['advanced_controls']}")
-    console.line()
-    console.line("Online Accounts:")
-    console.line(f"- backend: {matrix['online_accounts']['backend']}")
-    console.line()
-    console.line("Task Switcher:")
-    console.line(f"- backend: {matrix['task_switcher']['backend']}")
-    console.line()
-    console.line("Display:")
-    console.line(f"- backend: {matrix['display']['backend']}")
-    console.line(f"- reason: {matrix['display']['reason']}")
-    console.line()
-    console.line("Boot & Login:")
-    console.line(f"- pkexec found: {'yes' if matrix['boot_login']['pkexec_found'] else 'no'}")
-    console.line(f"- helper found: {'yes' if matrix['boot_login']['helper_found'] else 'no'}")
-    console.line(f"- SDDM assets found: {'yes' if matrix['boot_login']['sddm_assets_found'] else 'no'}")
-    console.line(f"- Plymouth found: {'yes' if matrix['boot_login']['plymouth_found'] else 'no'}")
-    console.line(f"- bootloader detected: {matrix['boot_login']['bootloader_detected']}")
+    console.section("KCM WORKFLOW")
+    console.line("List modules with `kcmshell6 --list`.")
+    console.line("Open a standalone module with `kcmshell6 <module-name>`.")
+    console.line("Open the full settings app with `systemsettings` or the `Kesk Settings` launcher.")
     return 0
+
+
+def launch_systemsettings(console: KeskConsole, args: Sequence[str]) -> int:
+    systemsettings = command_path("systemsettings")
+    kcmshell6 = command_path("kcmshell6")
+
+    if not has_graphical_session():
+        return show_requires_graphics(console, "KDE System Settings")
+
+    if args and args[0] == "--module":
+        if len(args) < 2:
+            return show_help(console, "Missing KCM module name after --module.")
+        args = [args[1], *args[2:]]
+
+    if systemsettings:
+        return launch_program([systemsettings, *args])
+
+    if args and kcmshell6:
+        return launch_program([kcmshell6, *args])
+
+    return show_help(console, "systemsettings is missing from the current system.")
+
+
+def launch_experimental(console: KeskConsole, root: Path, args: Sequence[str]) -> int:
+    if not has_graphical_session():
+        return show_requires_graphics(console, "Experimental Kesk Settings")
+
+    gui_path = resolve_experimental_gui(root)
+    if not gui_path.exists():
+        return show_help(console, f"Experimental GUI not found: {gui_path}")
+
+    return launch_program([str(gui_path), *args])
 
 
 def main(args: Sequence[str], root: Path) -> int:
     console = KeskConsole()
     if args and args[0] in {"--help", "-h", "help"}:
-        return print_help(console)
-
-    logger = SessionLogger("settings")
-    backend = SettingsBackend(resolve_runtime_paths(root), logger)
-    try:
-        if args and args[0] == "--dry-run":
-            return print_dry_run(console, backend)
-        if args:
-            return print_help(console, f"Unknown settings option: {' '.join(args)}")
-        if not has_graphical_session():
-            return print_requires_graphics(console)
-        return print_help(console, "The graphical settings launcher should be started through `kesk settings` from the router or the desktop launcher.")
-    finally:
-        logger.close()
+        return show_help(console)
+    if args and args[0] == "--dry-run":
+        return print_dry_run(console, root)
+    if args and args[0] == "--experimental":
+        return launch_experimental(console, root, args[1:])
+    return launch_systemsettings(console, args)

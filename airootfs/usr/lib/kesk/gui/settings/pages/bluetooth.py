@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QCheckBox, QComboBox, QLabel
 
-from ..widgets import SettingsSection, StatusLabel, action_bar, control_with_hint, small_button
+from ..backends.common import support_level_for_status
+from ..widgets import SupportBadge, SettingsSection, StatusLabel, action_bar, control_with_hint, small_button
 from .base import BasePage
 
 
@@ -17,12 +18,16 @@ class BluetoothPage(BasePage):
 
     def _build_ui(self) -> None:
         status_section = SettingsSection("Backend status", "Bluetooth control depends on bluetoothctl, the bluetooth service, and an available adapter.")
+        self.support_badge = SupportBadge("Loading", "work")
         self.status_label = StatusLabel("Loading backend status", "work")
         self.note_label = QLabel()
         self.note_label.setWordWrap(True)
         self.adapter_status = QLabel()
         self.service_status = QLabel()
+        self.tool_status = QLabel()
+        status_section.add_row("Support level", "Official support level for Bluetooth controls on this system.", self.support_badge, keywords="bluetooth support level")
         status_section.add_row("Backend", "Current availability for Bluetooth management.", self.status_label, keywords="bluetooth backend status")
+        status_section.add_row("Tool", "Bluetooth device-management tool used by Kesk Settings.", self.tool_status, keywords="bluetoothctl tool state")
         status_section.add_row("Adapter", "Detected Bluetooth adapter.", self.adapter_status, keywords="bluetooth adapter")
         status_section.add_row("Service", "Current bluetooth.service state.", self.service_status, keywords="bluetooth service")
         status_section.add_widget(self.note_label, keywords="bluetooth dependency notes bluez service")
@@ -33,8 +38,11 @@ class BluetoothPage(BasePage):
         self.enabled_hint = control_with_hint(self.enabled)
         self.receive_files = QCheckBox("Allow Bluetooth file reception")
         self.receive_files_hint = control_with_hint(self.receive_files)
+        self.start_service_button = small_button("Start Bluetooth Service")
+        self.start_service_button.clicked.connect(self.start_service)
         controls.add_row("Bluetooth radio", "Turn the Bluetooth radio on or off.", self.enabled_hint, keywords="bluetooth on off radio")
         controls.add_row("Receive files", "Allow file reception when a Bluetooth backend supports it.", self.receive_files_hint, keywords="receive files bluetooth")
+        controls.add_row("Service control", "Start bluetooth.service if Bluetooth tools are installed but the daemon is not active.", self.start_service_button, keywords="start bluetooth service")
         self.add_section(controls)
 
         paired = SettingsSection("Paired devices", "Trusted or remembered Bluetooth devices.")
@@ -64,11 +72,13 @@ class BluetoothPage(BasePage):
         pair_button = small_button("Pair Selected Device")
         self.pair_button = pair_button
         pair_button.clicked.connect(self.pair_selected)
+        self.scan_button = small_button("Scan for Devices")
+        self.scan_button.clicked.connect(self.scan_devices)
         advanced_button = small_button("Open Bluetooth Settings")
         advanced_button.clicked.connect(lambda: self.controller.open_kcm("kcm_bluetooth"))
         nearby.add_row("Nearby devices", "Devices currently visible to bluetoothctl.", self.nearby_selector, keywords="nearby bluetooth devices pair")
-        self.nearby_actions_hint = control_with_hint(pair_button)
-        nearby.add_row("Pair device", "Use a direct pair action when the adapter and Bluetooth service are available.", self.nearby_actions_hint, keywords="pair bluetooth")
+        self.nearby_actions_hint = control_with_hint(action_bar(self.scan_button, pair_button))
+        nearby.add_row("Pair device", "Scan on demand and pair a nearby device when the adapter and Bluetooth service are available.", self.nearby_actions_hint, keywords="pair bluetooth scan nearby")
         nearby.add_row("Advanced Bluetooth", "Open KDE's Bluetooth module for advanced flows.", advanced_button, keywords="bluetooth advanced kde")
         self.add_section(nearby)
 
@@ -82,7 +92,9 @@ class BluetoothPage(BasePage):
         self.begin_refresh()
         state = self.backend.bluetooth_state()
         status = state["status"]
+        self.support_badge.set_support(support_level_for_status(status))
         self.status_label.set_status(status.display_label, status.ui_kind)
+        self.tool_status.setText(str(state.get("tool_state", "missing")))
         self.adapter_status.setText(str(state["adapter_name"]))
         self.service_status.setText(str(state["service_state"]))
         self.enabled.setChecked(bool(state["enabled"]))
@@ -92,6 +104,8 @@ class BluetoothPage(BasePage):
             notes.append("Install bluez for Bluetooth device management.")
         if status.code != "missing" and str(state["service_state"]) != "active":
             notes.append("Bluetooth service is not running.")
+        if not bool(state.get("adapter_present")):
+            notes.append("No Bluetooth adapter was detected on this system.")
         self.note_label.setText("\n\n".join(notes or [status.summary]))
 
         tool_reason = "Install bluez for Bluetooth device management."
@@ -132,6 +146,8 @@ class BluetoothPage(BasePage):
             nearby_reason = "No nearby Bluetooth device is available."
         self.paired_actions_hint.set_enabled(not bool(paired_reason), paired_reason)
         self.nearby_actions_hint.set_enabled(not bool(nearby_reason), nearby_reason)
+        self.start_service_button.setEnabled(str(state["service_state"]) != "active" and bool(state.get("service_management_supported")))
+        self.start_service_button.setToolTip("" if self.start_service_button.isEnabled() else "pkexec and systemctl are required to start bluetooth.service from Kesk Settings.")
         self.finish_refresh()
 
     def apply_changes(self) -> None:
@@ -182,7 +198,18 @@ class BluetoothPage(BasePage):
         address = self._current_nearby_address()
         if not address:
             return
+        self.paired_summary.setText("Pairing requested. Follow any prompts from the Bluetooth stack if needed.")
         result = self.backend.bluetooth_pair_device(address)
+        self.show_result(result, "Bluetooth")
+        self.load_state()
+
+    def start_service(self) -> None:
+        result = self.backend.bluetooth_start_service()
+        self.show_result(result, "Bluetooth")
+        self.load_state()
+
+    def scan_devices(self) -> None:
+        result = self.backend.bluetooth_scan_devices()
         self.show_result(result, "Bluetooth")
         self.load_state()
 

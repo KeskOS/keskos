@@ -148,13 +148,16 @@ def read_current(backend) -> dict[str, Any]:
     powered = _powered(backend)
     return {
         "status": _status(backend),
+        "tool_state": "found" if backend.tools.get("bluetoothctl") else "missing",
         "adapter_name": _adapter_name(backend),
         "adapter_present": _adapter_name(backend) != "Unavailable",
         "service_state": service,
+        "service_management_supported": bool(backend.tools.get("pkexec") and backend.tools.get("systemctl")),
         "enabled": bool(powered) if powered is not None else False,
         "receive_files": bool(backend.custom_value("bluetooth_receive_files", False)),
         "paired_devices": _paired_devices(backend),
         "nearby_devices": _nearby_devices(backend),
+        "scan_supported": bool(backend.tools.get("bluetoothctl")),
     }
 
 
@@ -214,6 +217,30 @@ def trust_device(backend, address: str) -> dict[str, Any]:
 
 def remove_device(backend, address: str) -> dict[str, Any]:
     return _device_command(backend, "remove", address)
+
+
+def start_service(backend) -> dict[str, Any]:
+    if not backend.tools.get("systemctl"):
+        return result_payload(False, "systemctl is not available.", warnings=["Bluetooth service management requires systemctl."])
+    if not backend.tools.get("pkexec"):
+        return result_payload(False, "pkexec is not available.", warnings=["Administrator permission is required to start bluetooth.service."])
+    result = backend.run_pkexec([backend.tools["systemctl"], "start", "bluetooth.service"])
+    if result.returncode == 0 and _service_state(backend) == "active":
+        return result_payload(True, "bluetooth.service was started.", details=["Bluetooth service is now active."])
+    return result_payload(False, "bluetooth.service could not be started.", warnings=["Bluetooth service start requires admin access and a valid BlueZ installation."])
+
+
+def scan_devices(backend) -> dict[str, Any]:
+    tool = backend.tools.get("bluetoothctl")
+    if not tool:
+        return result_payload(False, "Bluetooth tools are not installed.", warnings=["Install bluez-utils to scan for Bluetooth devices."])
+    if _service_state(backend) != "active":
+        return result_payload(False, "Bluetooth service is not running.", warnings=["Start bluetooth.service before scanning for devices."])
+    start = backend._run([tool, "--timeout", "12", "scan", "on"], capture=True, timeout=20)
+    backend._run([tool, "scan", "off"], capture=True, timeout=10)
+    if start is None or start.returncode != 0:
+        return result_payload(False, "Bluetooth scan did not complete successfully.", warnings=["bluetoothctl could not start a device scan."])
+    return result_payload(True, "Bluetooth device scan completed.", details=["Nearby devices were refreshed from bluetoothctl."])
 
 
 def open_advanced_settings(backend):

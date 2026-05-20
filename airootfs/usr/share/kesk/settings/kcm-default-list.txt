@@ -1,0 +1,1 @@
+This file is generated during the ISO build by `kcmshell6 --list`.

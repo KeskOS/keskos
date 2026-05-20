@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .backends.common import support_ui_kind
 from .theme import ACCENT, MUTED, PANEL, status_color
 
 
@@ -54,6 +55,23 @@ class StatusLabel(QLabel):
         }.get(kind, "[ -- ]")
         self.setText(f"{prefix} {text}")
         self.setStyleSheet(f"color: {status_color(kind)};")
+
+
+class SupportBadge(QLabel):
+    def __init__(self, text: str, kind: str = "skip") -> None:
+        super().__init__()
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMinimumHeight(28)
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.set_support(text, kind)
+
+    def set_support(self, text: str, kind: str | None = None) -> None:
+        badge_kind = kind or support_ui_kind(text)
+        color = status_color(badge_kind)
+        self.setText(text)
+        self.setStyleSheet(
+            f"background-color: {PANEL}; border: 1px solid {color}; color: {color}; padding: 4px 10px; font-weight: 700;"
+        )
 
 
 class ControlHint(QWidget):

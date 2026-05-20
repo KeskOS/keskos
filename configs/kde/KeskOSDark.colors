@@ -131,8 +131,8 @@ ForegroundPositive=156,204,101
 ForegroundVisited=168,84,44
 
 [General]
-ColorScheme=KESKOS
-Name=KESKOS
+ColorScheme=KeskOSDark
+Name=KeskOSDark
 accentActiveTitlebar=true
 accentInactiveTitlebar=false
 shadeSortColumn=true

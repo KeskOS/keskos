@@ -11,7 +11,8 @@ from ..backend import (
     MUSIC_PLAYER_OPTIONS,
     VIDEO_PLAYER_OPTIONS,
 )
-from ..widgets import SettingsSection, StatusLabel, action_bar, populate_combo, select_combo_value, small_button
+from ..backends.common import support_level_for_status
+from ..widgets import SupportBadge, SettingsSection, StatusLabel, action_bar, populate_combo, select_combo_value, small_button
 from .base import BasePage
 
 
@@ -27,7 +28,9 @@ class DefaultsPage(BasePage):
 
     def _build_ui(self) -> None:
         status = SettingsSection("Backend status", "Default applications are written directly; MIME handlers also use xdg-mime when available.")
+        self.support_badge = SupportBadge("Loading", "work")
         self.status_label = StatusLabel("Loading backend status", "work")
+        status.add_row("Support level", "Official support level for default applications and MIME controls on this system.", self.support_badge, keywords="default applications support level")
         status.add_row("Applications backend", "Current availability for default applications and file associations.", self.status_label, keywords="default apps backend status")
         self.add_section(status)
 
@@ -134,6 +137,7 @@ class DefaultsPage(BasePage):
         self.load_options()
         state = self.backend.default_apps_state()
         assoc_state = self.backend.file_associations_state()
+        self.support_badge.set_support(support_level_for_status(assoc_state["status"]))
         self.status_label.set_status(assoc_state["status"].summary, assoc_state["status"].ui_kind)
         select_combo_value(self.browser, str(state["browser"]))
         select_combo_value(self.terminal, str(state["terminal"]))

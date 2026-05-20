@@ -1,0 +1,503 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TARGET_USER="${TARGET_USER:-}"
+TARGET_HOME="${TARGET_HOME:-}"
+SOURCE_ROOT="${SOURCE_ROOT:-${KESKOS_SOURCE_ROOT:-}}"
+OFFLINE=0
+NO_KVANTUM=0
+
+COLOR_SCHEME_NAME="KeskOSDark"
+LOOK_AND_FEEL_NAME="com.keskos.desktop"
+PLASMA_THEME_NAME="keskos-shell"
+WINDOW_DECORATION_NAME="kwin4_decoration_qml_keskos_split"
+KVANTUM_THEME_NAME="KeskOS"
+ACCENT_COLOR="#ce6a35"
+
+kwriteconfig_bin=""
+kbuildsycoca_bin=""
+plasma_apply_colorscheme_bin=""
+qdbus_bin=""
+kvantummanager_bin=""
+lookandfeeltool_bin=""
+plasma_apply_lookandfeel_bin=""
+log_file=""
+
+choose_binary() {
+  local name=""
+  for name in "$@"; do
+    if command -v "$name" >/dev/null 2>&1; then
+      printf '%s\n' "$name"
+      return 0
+    fi
+  done
+  return 1
+}
+
+timestamp() {
+  date +"%Y-%m-%d %H:%M:%S"
+}
+
+log() {
+  local message="$1"
+  printf '[%s] %s\n' "$(timestamp)" "$message" | tee -a "$log_file"
+}
+
+resolve_bins() {
+  kwriteconfig_bin="$(choose_binary kwriteconfig6 kwriteconfig5 || true)"
+  kbuildsycoca_bin="$(choose_binary kbuildsycoca6 kbuildsycoca5 || true)"
+  plasma_apply_colorscheme_bin="$(choose_binary plasma-apply-colorscheme || true)"
+  plasma_apply_lookandfeel_bin="$(choose_binary plasma-apply-lookandfeel || true)"
+  lookandfeeltool_bin="$(choose_binary lookandfeeltool || true)"
+  qdbus_bin="$(choose_binary qdbus6 qdbus || true)"
+  kvantummanager_bin="$(choose_binary kvantummanager kvantummanager6 || true)"
+}
+
+has_graphical_session() {
+  [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]
+}
+
+resolve_target_user() {
+  if [[ -n "$TARGET_USER" ]]; then
+    return 0
+  fi
+
+  if [[ ${EUID} -eq 0 && -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+    TARGET_USER="${SUDO_USER}"
+  else
+    TARGET_USER="$(id -un)"
+  fi
+}
+
+resolve_target_home() {
+  if [[ -n "$TARGET_HOME" ]]; then
+    return 0
+  fi
+
+  TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+  if [[ -z "$TARGET_HOME" ]]; then
+    printf '[kesk-apply-theme] error: could not resolve home for %s\n' "$TARGET_USER" >&2
+    exit 1
+  fi
+}
+
+resolve_source_root() {
+  local candidate=""
+
+  for candidate in \
+    "${SOURCE_ROOT:-}" \
+    "$(pwd)" \
+    "${TARGET_HOME}/.local/share/keskos/source" \
+    "$HOME/.local/share/keskos/source" \
+    "/usr/local/share/keskos/source" \
+    "/usr/share/keskos/source"
+  do
+    [[ -n "$candidate" ]] || continue
+    if [[ -d "$candidate/configs" && -d "$candidate/desktop" ]]; then
+      SOURCE_ROOT="$candidate"
+      return 0
+    fi
+  done
+
+  SOURCE_ROOT=""
+}
+
+ensure_dirs() {
+  mkdir -p \
+    "$TARGET_HOME/.config" \
+    "$TARGET_HOME/.config/Kvantum" \
+    "$TARGET_HOME/.local/share/color-schemes" \
+    "$TARGET_HOME/.local/share/plasma/desktoptheme" \
+    "$TARGET_HOME/.local/share/plasma/look-and-feel" \
+    "$TARGET_HOME/.local/state/kesk/logs"
+}
+
+chown_path() {
+  local target="$1"
+  if [[ ${EUID} -eq 0 && -e "$target" ]]; then
+    chown -R "$TARGET_USER:$TARGET_USER" "$target"
+  fi
+}
+
+read_ini_value() {
+  local path="$1"
+  local section="$2"
+  local key="$3"
+
+  [[ -f "$path" ]] || return 1
+
+  awk -F= -v wanted_section="$section" -v wanted_key="$key" '
+    BEGIN {
+      current = ""
+    }
+    /^[[:space:]]*[#;]/ {
+      next
+    }
+    /^\[/ {
+      current = $0
+      sub(/^\[/, "", current)
+      sub(/\]$/, "", current)
+      next
+    }
+    current == wanted_section {
+      key = $1
+      sub(/^[[:space:]]+/, "", key)
+      sub(/[[:space:]]+$/, "", key)
+      if (key == wanted_key) {
+        value = substr($0, index($0, "=") + 1)
+        sub(/^[[:space:]]+/, "", value)
+        sub(/[[:space:]]+$/, "", value)
+        print value
+        exit
+      }
+    }
+  ' "$path"
+}
+
+strip_kde_color_overrides() {
+  local kdeglobals="$1"
+  local temp_file=""
+
+  [[ -f "$kdeglobals" ]] || return 0
+
+  temp_file="$(mktemp)"
+  awk '
+    BEGIN {
+      skip_section = 0
+      in_general = 0
+    }
+    /^\[/ {
+      in_general = ($0 == "[General]")
+      skip_section = ($0 ~ /^\[Colors:/ || $0 ~ /^\[ColorEffects:/ || $0 == "[WM]")
+    }
+    skip_section {
+      next
+    }
+    in_general && /^ColorSchemeHash=/ {
+      next
+    }
+    {
+      print
+    }
+  ' "$kdeglobals" > "$temp_file"
+
+  mv "$temp_file" "$kdeglobals"
+}
+
+font_available() {
+  local family="$1"
+  if [[ "$family" == "monospace" ]]; then
+    return 0
+  fi
+
+  fc-list "$family" family 2>/dev/null \
+    | tr ',' '\n' \
+    | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+    | grep -Fqx "$family"
+}
+
+pick_font_family() {
+  local family=""
+  for family in \
+    "JetBrains Mono" \
+    "JetBrainsMono Nerd Font" \
+    "Iosevka" \
+    "Noto Sans Mono" \
+    "monospace"
+  do
+    if font_available "$family"; then
+      printf '%s\n' "$family"
+      return 0
+    fi
+  done
+
+  printf 'monospace\n'
+}
+
+first_existing_theme_dir() {
+  local require_subpath="$1"
+  shift
+  local name=""
+  local base=""
+  local candidate=""
+
+  for name in "$@"; do
+    for base in \
+      "$TARGET_HOME/.local/share/icons" \
+      "$TARGET_HOME/.icons" \
+      "/usr/local/share/icons" \
+      "/usr/share/icons"
+    do
+      candidate="$base/$name"
+      [[ -d "$candidate" ]] || continue
+      if [[ -n "$require_subpath" && ! -e "$candidate/$require_subpath" ]]; then
+        continue
+      fi
+      printf '%s\n' "$name"
+      return 0
+    done
+  done
+
+  return 1
+}
+
+pick_icon_theme() {
+  first_existing_theme_dir "" \
+    "keskos" \
+    "kesk-os" \
+    "kesk" \
+    "breeze-dark" \
+    "breeze" \
+    "Breeze" \
+    "hicolor"
+}
+
+pick_cursor_theme() {
+  first_existing_theme_dir "cursors" \
+    "keskos" \
+    "kesk-os" \
+    "kesk" \
+    "breeze_cursors" \
+    "breeze" \
+    "Breeze_Snow" \
+    "Breeze" \
+    "default"
+}
+
+find_first_path() {
+  local candidate=""
+  for candidate in "$@"; do
+    [[ -n "$candidate" ]] || continue
+    if [[ -e "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+sync_dir_if_missing_system_asset() {
+  local system_path="$1"
+  local source_path="$2"
+  local target_path="$3"
+
+  [[ -d "$system_path" ]] && return 0
+  [[ -d "$source_path" ]] || return 0
+
+  rm -rf "$target_path"
+  mkdir -p "$(dirname "$target_path")"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete "$source_path/" "$target_path/"
+  else
+    cp -a "$source_path" "$target_path"
+  fi
+  chown_path "$target_path"
+}
+
+copy_file_if_missing_system_asset() {
+  local system_path="$1"
+  local source_path="$2"
+  local target_path="$3"
+
+  [[ -f "$system_path" ]] && return 0
+  [[ -f "$source_path" ]] || return 0
+
+  install -Dm644 "$source_path" "$target_path"
+  chown_path "$target_path"
+}
+
+stage_local_assets_from_source() {
+  [[ -n "$SOURCE_ROOT" ]] || return 0
+
+  copy_file_if_missing_system_asset \
+    "/usr/share/color-schemes/${COLOR_SCHEME_NAME}.colors" \
+    "$SOURCE_ROOT/configs/kde/${COLOR_SCHEME_NAME}.colors" \
+    "$TARGET_HOME/.local/share/color-schemes/${COLOR_SCHEME_NAME}.colors"
+
+  sync_dir_if_missing_system_asset \
+    "/usr/share/plasma/desktoptheme/${PLASMA_THEME_NAME}" \
+    "$SOURCE_ROOT/configs/plasma/desktoptheme/${PLASMA_THEME_NAME}" \
+    "$TARGET_HOME/.local/share/plasma/desktoptheme/${PLASMA_THEME_NAME}"
+
+  sync_dir_if_missing_system_asset \
+    "/usr/share/plasma/look-and-feel/${LOOK_AND_FEEL_NAME}" \
+    "$SOURCE_ROOT/configs/look-and-feel/${LOOK_AND_FEEL_NAME}" \
+    "$TARGET_HOME/.local/share/plasma/look-and-feel/${LOOK_AND_FEEL_NAME}"
+
+  sync_dir_if_missing_system_asset \
+    "/usr/share/Kvantum/${KVANTUM_THEME_NAME}" \
+    "$SOURCE_ROOT/configs/Kvantum/${KVANTUM_THEME_NAME}" \
+    "$TARGET_HOME/.config/Kvantum/${KVANTUM_THEME_NAME}"
+}
+
+kvantum_engine_available() {
+  [[ -n "$kvantummanager_bin" ]]
+}
+
+kvantum_theme_available() {
+  [[ -d "/usr/share/Kvantum/${KVANTUM_THEME_NAME}" || -d "$TARGET_HOME/.config/Kvantum/${KVANTUM_THEME_NAME}" ]]
+}
+
+apply_kvantum_theme() {
+  local kvantum_config="$TARGET_HOME/.config/Kvantum/kvantum.kvconfig"
+
+  write_key "$kvantum_config" "General" "theme" "$KVANTUM_THEME_NAME"
+
+  if [[ -n "$kvantummanager_bin" ]]; then
+    HOME="$TARGET_HOME" "$kvantummanager_bin" --set "$KVANTUM_THEME_NAME" >/dev/null 2>&1 || true
+  fi
+}
+
+write_key() {
+  local file="$1"
+  local group="$2"
+  local key="$3"
+  local value="$4"
+
+  [[ -n "$kwriteconfig_bin" ]] || return 1
+
+  mkdir -p "$(dirname "$file")"
+  "$kwriteconfig_bin" --file "$file" --group "$group" --key "$key" "$value"
+}
+
+apply_theme_stack() {
+  local kdeglobals="$TARGET_HOME/.config/kdeglobals"
+  local kcminputrc="$TARGET_HOME/.config/kcminputrc"
+  local plasmarc="$TARGET_HOME/.config/plasmarc"
+  local kwinrc="$TARGET_HOME/.config/kwinrc"
+  local lookandfeel_bin=""
+  local icon_theme=""
+  local cursor_theme=""
+  local font_family=""
+  local font_setting=""
+  local small_font_setting=""
+  local widget_style="Breeze"
+
+  [[ -n "$kwriteconfig_bin" ]] || {
+    printf '[kesk-apply-theme] error: kwriteconfig6/5 was not found\n' >&2
+    exit 1
+  }
+
+  ensure_dirs
+  stage_local_assets_from_source
+  strip_kde_color_overrides "$kdeglobals"
+
+  icon_theme="$(pick_icon_theme || true)"
+  cursor_theme="$(pick_cursor_theme || true)"
+  font_family="$(pick_font_family)"
+  font_setting="${font_family},10,-1,5,50,0,0,0,0,0"
+  small_font_setting="${font_family},8,-1,5,50,0,0,0,0,0"
+
+  if [[ "$OFFLINE" -eq 0 ]] && has_graphical_session; then
+    lookandfeel_bin="${plasma_apply_lookandfeel_bin:-$lookandfeeltool_bin}"
+    if [[ -n "$lookandfeel_bin" ]]; then
+      "$lookandfeel_bin" --apply "$LOOK_AND_FEEL_NAME" --keep-auto >/dev/null 2>&1 || true
+      log "Applied ${LOOK_AND_FEEL_NAME} through $(basename "$lookandfeel_bin")"
+    fi
+  fi
+
+  if [[ "$NO_KVANTUM" -eq 0 ]] && kvantum_engine_available && kvantum_theme_available; then
+    widget_style="kvantum"
+    apply_kvantum_theme
+    log "Kvantum engine detected; setting Kvantum theme to ${KVANTUM_THEME_NAME}"
+  else
+    log "Using Breeze widget style as the stable base"
+  fi
+
+  write_key "$kdeglobals" "General" "ColorScheme" "$COLOR_SCHEME_NAME"
+  write_key "$kdeglobals" "General" "AccentColor" "$ACCENT_COLOR"
+  write_key "$kdeglobals" "General" "font" "$font_setting"
+  write_key "$kdeglobals" "General" "fixed" "$font_setting"
+  write_key "$kdeglobals" "General" "smallestReadableFont" "$small_font_setting"
+  write_key "$kdeglobals" "General" "menuFont" "$font_setting"
+  write_key "$kdeglobals" "General" "toolBarFont" "$font_setting"
+  write_key "$kdeglobals" "KDE" "SingleClick" "false"
+  write_key "$kdeglobals" "KDE" "widgetStyle" "$widget_style"
+  write_key "$kdeglobals" "KDE" "LookAndFeelPackage" "$LOOK_AND_FEEL_NAME"
+
+  if [[ -n "$icon_theme" ]]; then
+    write_key "$kdeglobals" "Icons" "Theme" "$icon_theme"
+  fi
+
+  if [[ -n "$cursor_theme" ]]; then
+    write_key "$kcminputrc" "Mouse" "cursorTheme" "$cursor_theme"
+    write_key "$kcminputrc" "Mouse" "cursorSize" "24"
+  fi
+
+  write_key "$plasmarc" "Theme" "name" "$PLASMA_THEME_NAME"
+  write_key "$kwinrc" "org.kde.kdecoration2" "library" "org.kde.kwin.aurorae"
+  write_key "$kwinrc" "org.kde.kdecoration2" "theme" "$WINDOW_DECORATION_NAME"
+  write_key "$kwinrc" "org.kde.kdecoration2" "BorderSize" "Normal"
+  write_key "$kwinrc" "org.kde.kdecoration2" "BorderSizeAuto" "false"
+  write_key "$kwinrc" "Windows" "BorderlessMaximizedWindows" "false"
+
+  if [[ -n "$kbuildsycoca_bin" ]]; then
+    "$kbuildsycoca_bin" >/dev/null 2>&1 || true
+  fi
+
+  if [[ "$OFFLINE" -eq 0 && -n "$plasma_apply_colorscheme_bin" ]] && has_graphical_session; then
+    "$plasma_apply_colorscheme_bin" "$COLOR_SCHEME_NAME" >/dev/null 2>&1 || true
+    log "Applied ${COLOR_SCHEME_NAME} through plasma-apply-colorscheme"
+  fi
+
+  if [[ "$OFFLINE" -eq 0 && -n "$qdbus_bin" ]] && has_graphical_session; then
+    "$qdbus_bin" org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+  fi
+
+  chown_path "$TARGET_HOME/.config"
+  chown_path "$TARGET_HOME/.local/share/color-schemes"
+  chown_path "$TARGET_HOME/.local/share/plasma"
+  chown_path "$TARGET_HOME/.local/state/kesk"
+
+  log "Theme apply complete for ${TARGET_USER}"
+  log "Color scheme=${COLOR_SCHEME_NAME} widgetStyle=${widget_style} iconTheme=${icon_theme:-unset} cursorTheme=${cursor_theme:-unset} font=${font_family}"
+}
+
+main() {
+  local arg=""
+
+  while [[ $# -gt 0 ]]; do
+    arg="$1"
+    case "$arg" in
+      --offline)
+        OFFLINE=1
+        shift
+        ;;
+      --no-kvantum)
+        NO_KVANTUM=1
+        shift
+        ;;
+      --user)
+        TARGET_USER="${2:-}"
+        shift 2
+        ;;
+      --home)
+        TARGET_HOME="${2:-}"
+        shift 2
+        ;;
+      --source-root)
+        SOURCE_ROOT="${2:-}"
+        shift 2
+        ;;
+      *)
+        printf '[kesk-apply-theme] error: unknown option: %s\n' "$arg" >&2
+        return 1
+        ;;
+    esac
+  done
+
+  resolve_target_user
+  resolve_target_home
+  resolve_source_root
+  resolve_bins
+  ensure_dirs
+  log_file="$TARGET_HOME/.local/state/kesk/logs/theme-apply.log"
+  touch "$log_file"
+  chown_path "$log_file"
+  log "Starting theme apply for ${TARGET_USER}"
+  apply_theme_stack
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

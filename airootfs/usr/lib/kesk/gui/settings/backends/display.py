@@ -57,6 +57,10 @@ def read_current(backend) -> dict[str, Any]:
         "night_color": backend.as_bool(backend.custom_value("display_night_color"), False),
         "supports_live_layout": False,
         "supports_brightness": brightness is not None,
+        "brightness_supported": brightness is not None,
+        "brightness_reason": "Brightness control is only shown when brightnessctl can read the current display backlight.",
+        "night_color_supported": False,
+        "night_color_reason": "Night Color changes stay in KDE Display Settings on this backend.",
         "apply_supported": False,
         "handoff_reason": "Display layout and scaling are opened in KDE Display Settings to avoid unsafe display changes or black-screen risk.",
     }

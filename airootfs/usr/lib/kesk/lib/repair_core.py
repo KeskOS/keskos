@@ -22,9 +22,9 @@ BACKUP_TIME_FORMAT = "%Y%m%d-%H%M%S"
 THEME_KEYWORDS = ("keskos", "kesk-os", "kesk", "amber", "terminal", "split")
 PLASMA_THEME_NAMES = ("keskos-shell", "keskos", "kesk-os", "kesk")
 LOOK_AND_FEEL_NAMES = ("com.keskos.desktop", "keskos", "kesk-os", "kesk")
-COLOR_SCHEME_NAMES = ("KESKOS", "keskos", "kesk-os", "kesk")
-ICON_THEME_NAMES = ("keskos", "kesk-os", "kesk", "Papirus-Dark", "Papirus", "breeze-dark", "Breeze", "hicolor")
-CURSOR_THEME_NAMES = ("keskos", "kesk-os", "kesk", "Bibata-Modern-Ice", "Bibata-Original-Ice", "Breeze_Snow", "Breeze", "default")
+COLOR_SCHEME_NAMES = ("KeskOSDark", "KESKOS", "keskosdark", "keskos", "kesk-os", "kesk")
+ICON_THEME_NAMES = ("keskos", "kesk-os", "kesk", "breeze-dark", "Papirus-Dark", "Papirus", "breeze", "Breeze", "hicolor")
+CURSOR_THEME_NAMES = ("keskos", "kesk-os", "kesk", "breeze_cursors", "breeze", "Bibata-Modern-Ice", "Bibata-Original-Ice", "Breeze_Snow", "Breeze", "default")
 GTK_THEME_NAMES = ("keskos", "kesk-os", "kesk", "amber", "split")
 KONSOLE_PROFILE_NAMES = ("KeskOS", "keskos", "terminal")
 KVANTUM_THEME_NAMES = ("keskos", "kesk-os", "kesk", "amber", "split")
@@ -977,6 +977,7 @@ def reapply_kde_theme(ctx: RepairContext, record: ActionRecord) -> int:
     updates_ok &= kwriteconfig(ctx, record, ctx.home / ".config" / "kdeglobals", ["General"], "menuFont", FONT_SETTING)
     updates_ok &= kwriteconfig(ctx, record, ctx.home / ".config" / "kdeglobals", ["General"], "toolBarFont", FONT_SETTING)
     updates_ok &= kwriteconfig(ctx, record, ctx.home / ".config" / "kdeglobals", ["KDE"], "SingleClick", "false")
+    updates_ok &= kwriteconfig(ctx, record, ctx.home / ".config" / "kdeglobals", ["KDE"], "widgetStyle", "Breeze")
 
     if color_scheme:
         updates_ok &= kwriteconfig(ctx, record, ctx.home / ".config" / "kdeglobals", ["General"], "ColorScheme", color_scheme)

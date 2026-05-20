@@ -58,6 +58,11 @@ elif command -v qdbus >/dev/null 2>&1; then
   qdbus_bin="qdbus"
 fi
 
+plasma_apply_colorscheme_bin=""
+if command -v plasma-apply-colorscheme >/dev/null 2>&1; then
+  plasma_apply_colorscheme_bin="plasma-apply-colorscheme"
+fi
+
 resolve_target_user() {
   if [[ -n "$TARGET_USER" ]]; then
     return
@@ -391,32 +396,81 @@ configure_terminal() {
   "$kwriteconfig_bin" --file "$konsolerc" --group "Desktop Entry" --key DefaultProfile "KeskOS.profile"
 }
 
+has_graphical_session() {
+  [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]
+}
+
+first_existing_theme_dir() {
+  local require_subpath="$1"
+  shift
+  local name=""
+  local base=""
+  local candidate=""
+
+  for name in "$@"; do
+    for base in \
+      "$TARGET_HOME/.local/share/icons" \
+      "$TARGET_HOME/.icons" \
+      "/usr/local/share/icons" \
+      "/usr/share/icons"
+    do
+      candidate="$base/$name"
+      [[ -d "$candidate" ]] || continue
+      if [[ -n "$require_subpath" && ! -e "$candidate/$require_subpath" ]]; then
+        continue
+      fi
+      printf '%s\n' "$name"
+      return 0
+    done
+  done
+
+  return 1
+}
+
+pick_icon_theme() {
+  first_existing_theme_dir "" \
+    "keskos" \
+    "kesk-os" \
+    "kesk" \
+    "breeze-dark" \
+    "breeze" \
+    "Breeze" \
+    "hicolor"
+}
+
+pick_cursor_theme() {
+  first_existing_theme_dir "cursors" \
+    "keskos" \
+    "kesk-os" \
+    "kesk" \
+    "breeze_cursors" \
+    "breeze" \
+    "Breeze_Snow" \
+    "Breeze" \
+    "default"
+}
+
 configure_kde_visuals() {
-  local kdeglobals="$TARGET_HOME/.config/kdeglobals"
-  local kwin_file="$TARGET_HOME/.config/kwinrc"
-  local plasmarc="$TARGET_HOME/.config/plasmarc"
+  local theme_apply_bin=""
 
-  [[ -n "$kwriteconfig_bin" ]] || return 0
+  for theme_apply_bin in \
+    "/usr/bin/kesk-apply-theme" \
+    "$SOURCE_ROOT/airootfs/usr/bin/kesk-apply-theme"
+  do
+    [[ -x "$theme_apply_bin" ]] || continue
 
-  "$kwriteconfig_bin" --file "$kdeglobals" --group General --key font "JetBrainsMono Nerd Font,10,-1,5,50,0,0,0,0,0"
-  "$kwriteconfig_bin" --file "$kdeglobals" --group General --key fixed "JetBrainsMono Nerd Font,10,-1,5,50,0,0,0,0,0"
-  "$kwriteconfig_bin" --file "$kdeglobals" --group General --key smallestReadableFont "JetBrainsMono Nerd Font,8,-1,5,50,0,0,0,0,0"
-  "$kwriteconfig_bin" --file "$kdeglobals" --group General --key menuFont "JetBrainsMono Nerd Font,10,-1,5,50,0,0,0,0,0"
-  "$kwriteconfig_bin" --file "$kdeglobals" --group General --key toolBarFont "JetBrainsMono Nerd Font,10,-1,5,50,0,0,0,0,0"
-  "$kwriteconfig_bin" --file "$kdeglobals" --group KDE --key SingleClick false
+    if [[ "$OFFLINE" -eq 1 ]]; then
+      SOURCE_ROOT="$SOURCE_ROOT" "$theme_apply_bin" --user "$TARGET_USER" --offline
+    else
+      SOURCE_ROOT="$SOURCE_ROOT" "$theme_apply_bin" --user "$TARGET_USER"
+    fi
+    return 0
+  done
 
-  if [[ "$FEATURE_PLASMA_THEME" -eq 1 ]]; then
-    "$kwriteconfig_bin" --file "$kdeglobals" --group General --key ColorScheme "KESKOS"
-    "$kwriteconfig_bin" --file "$kdeglobals" --group KDE --key LookAndFeelPackage "com.keskos.desktop"
-    "$kwriteconfig_bin" --file "$plasmarc" --group Theme --key name "keskos-shell"
-  fi
-
-  if [[ "$FEATURE_WINDOW_BORDERS" -eq 1 ]]; then
-    "$kwriteconfig_bin" --file "$kwin_file" --group org.kde.kdecoration2 --key library "org.kde.kwin.aurorae"
-    "$kwriteconfig_bin" --file "$kwin_file" --group org.kde.kdecoration2 --key theme "kwin4_decoration_qml_keskos_split"
-    "$kwriteconfig_bin" --file "$kwin_file" --group org.kde.kdecoration2 --key BorderSize "Normal"
-    "$kwriteconfig_bin" --file "$kwin_file" --group org.kde.kdecoration2 --key BorderSizeAuto false
-    "$kwriteconfig_bin" --file "$kwin_file" --group Windows --key BorderlessMaximizedWindows false
+  if [[ -n "$kwriteconfig_bin" ]]; then
+    "$kwriteconfig_bin" --file "$TARGET_HOME/.config/kdeglobals" --group General --key ColorScheme "KeskOSDark"
+    "$kwriteconfig_bin" --file "$TARGET_HOME/.config/kdeglobals" --group General --key AccentColor "#ce6a35"
+    "$kwriteconfig_bin" --file "$TARGET_HOME/.config/kdeglobals" --group KDE --key widgetStyle "Breeze"
   fi
 }
 
@@ -645,12 +699,14 @@ fix_ownership() {
     "$TARGET_HOME/.config/kdeglobals"
     "$TARGET_HOME/.config/kglobalshortcutsrc"
     "$TARGET_HOME/.config/keskos/launcher-mode"
+    "$TARGET_HOME/.config/Kvantum"
     "$TARGET_HOME/.config/kwinrc"
     "$TARGET_HOME/.config/kscreenlockerrc"
     "$TARGET_HOME/.config/ksplashrc"
     "$TARGET_HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
     "$TARGET_HOME/.config/plasmarc"
     "$TARGET_HOME/.config/plasmashellrc"
+    "$TARGET_HOME/.local/state/kesk"
     "$TARGET_HOME/.local/state/keskos"
   )
 

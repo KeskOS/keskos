@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/kesk-apply-theme"
+
+read_launcher_exec() {
+  local desktop_file="$1"
+  awk -F= '
+    /^[[:space:]]*Exec=/ {
+      value = substr($0, index($0, "=") + 1)
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      print value
+      exit
+    }
+  ' "$desktop_file"
+}
+
+read_effective_value() {
+  local user_file="$1"
+  local system_file="$2"
+  local section="$3"
+  local key="$4"
+  local value=""
+
+  value="$(read_ini_value "$user_file" "$section" "$key" || true)"
+  if [[ -n "$value" ]]; then
+    printf '%s (user)\n' "$value"
+    return 0
+  fi
+
+  value="$(read_ini_value "$system_file" "$section" "$key" || true)"
+  if [[ -n "$value" ]]; then
+    printf '%s (system default)\n' "$value"
+    return 0
+  fi
+
+  printf 'unset\n'
+}
+
+main() {
+  local arg=""
+  local kdeglobals=""
+  local kcminputrc=""
+  local system_kdeglobals=""
+  local system_kcminputrc=""
+  local system_plasmarc=""
+  local system_kvantum_config=""
+  local kvantum_config=""
+  local launcher_path=""
+  local launcher_exec=""
+  local override_path=""
+  local override_exec=""
+  local kvantum_installed="no"
+  local kvantum_theme_path=""
+
+  while [[ $# -gt 0 ]]; do
+    arg="$1"
+    case "$arg" in
+      --user)
+        TARGET_USER="${2:-}"
+        shift 2
+        ;;
+      --home)
+        TARGET_HOME="${2:-}"
+        shift 2
+        ;;
+      --source-root)
+        SOURCE_ROOT="${2:-}"
+        shift 2
+        ;;
+      *)
+        printf '[kesk-theme-status] error: unknown option: %s\n' "$arg" >&2
+        return 1
+        ;;
+    esac
+  done
+
+  resolve_target_user
+  resolve_target_home
+  resolve_source_root
+  resolve_bins
+
+  kdeglobals="$TARGET_HOME/.config/kdeglobals"
+  kcminputrc="$TARGET_HOME/.config/kcminputrc"
+  kvantum_config="$TARGET_HOME/.config/Kvantum/kvantum.kvconfig"
+  system_kdeglobals="$(find_first_path "${SOURCE_ROOT}/airootfs/etc/xdg/kdeglobals" "/etc/xdg/kdeglobals" || true)"
+  system_kcminputrc="$(find_first_path "${SOURCE_ROOT}/airootfs/etc/xdg/kcminputrc" "/etc/xdg/kcminputrc" || true)"
+  system_plasmarc="$(find_first_path "${SOURCE_ROOT}/airootfs/etc/xdg/plasmarc" "/etc/xdg/plasmarc" || true)"
+  system_kvantum_config="$(find_first_path "${SOURCE_ROOT}/airootfs/etc/xdg/Kvantum/kvantum.kvconfig" "/etc/xdg/Kvantum/kvantum.kvconfig" || true)"
+
+  if kvantum_engine_available; then
+    kvantum_installed="yes"
+  fi
+
+  kvantum_theme_path="$(find_first_path "${SOURCE_ROOT}/configs/Kvantum/KeskOS" "$TARGET_HOME/.config/Kvantum/KeskOS" "/usr/share/Kvantum/KeskOS" || true)"
+
+  launcher_path="$(find_first_path "${SOURCE_ROOT}/desktop/kesk-settings.desktop" "/usr/share/applications/kesk-settings.desktop" || true)"
+  override_path="$(find_first_path "${SOURCE_ROOT}/desktop/systemsettings.desktop" "/usr/local/share/applications/systemsettings.desktop" "/usr/share/applications/systemsettings.desktop" || true)"
+
+  if [[ -n "$launcher_path" && -f "$launcher_path" ]]; then
+    launcher_exec="$(read_launcher_exec "$launcher_path")"
+  else
+    launcher_exec="missing"
+  fi
+
+  if [[ -n "$override_path" && -f "$override_path" ]]; then
+    override_exec="$(read_launcher_exec "$override_path")"
+  else
+    override_exec="missing"
+  fi
+
+  printf 'target user:                 %s\n' "$TARGET_USER"
+  printf 'target home:                 %s\n' "$TARGET_HOME"
+  printf 'current KDE color scheme:    %s\n' "$(read_effective_value "$kdeglobals" "$system_kdeglobals" "General" "ColorScheme")"
+  printf 'current accent color:        %s\n' "$(read_effective_value "$kdeglobals" "$system_kdeglobals" "General" "AccentColor")"
+  printf 'current widget style:        %s\n' "$(read_effective_value "$kdeglobals" "$system_kdeglobals" "KDE" "widgetStyle")"
+  printf 'current Plasma theme:        %s\n' "$(read_effective_value "$TARGET_HOME/.config/plasmarc" "$system_plasmarc" "Theme" "name")"
+  printf 'current icon theme:          %s\n' "$(read_effective_value "$kdeglobals" "$system_kdeglobals" "Icons" "Theme")"
+  printf 'current cursor theme:        %s\n' "$(read_effective_value "$kcminputrc" "$system_kcminputrc" "Mouse" "cursorTheme")"
+  printf 'current font:                %s\n' "$(read_effective_value "$kdeglobals" "$system_kdeglobals" "General" "font")"
+  printf 'Kvantum installed:           %s\n' "$kvantum_installed"
+  printf 'current Kvantum theme:       %s\n' "$(read_effective_value "$kvantum_config" "$system_kvantum_config" "General" "theme")"
+  printf 'KeskOS Kvantum theme exists: %s\n' "$( [[ -n "$kvantum_theme_path" ]] && printf 'yes (%s)' "$kvantum_theme_path" || printf 'no' )"
+  printf 'Kesk launcher path:          %s\n' "${launcher_path:-missing}"
+  printf 'Kesk launcher Exec:          %s\n' "$launcher_exec"
+  printf 'launcher uses systemsettings:%s\n' "$( [[ "$launcher_exec" == "systemsettings" ]] && printf ' yes' || printf ' no' )"
+  printf 'override desktop path:       %s\n' "${override_path:-missing}"
+  printf 'override desktop Exec:       %s\n' "$override_exec"
+}
+
+main "$@"

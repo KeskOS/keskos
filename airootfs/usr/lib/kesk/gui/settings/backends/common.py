@@ -3,6 +3,26 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+SUPPORT_LEVELS = {
+    "connected": "Native",
+    "limited": "Limited",
+    "kde_handoff": "KDE Handoff",
+    "intentional_handoff": "KDE Handoff",
+    "requires_admin": "Requires Admin",
+    "missing": "Unsupported",
+    "unsupported": "Unsupported",
+    "planned": "Planned",
+}
+
+SUPPORT_UI_KINDS = {
+    "Native": "ok",
+    "Limited": "work",
+    "KDE Handoff": "work",
+    "Requires Admin": "warn",
+    "Unsupported": "skip",
+    "Planned": "skip",
+}
+
 
 @dataclass(frozen=True)
 class BackendStatus:
@@ -29,11 +49,19 @@ class BackendStatus:
         return {
             "connected": "Connected",
             "limited": "Limited",
-            "kde_handoff": "KDE handoff",
-            "intentional_handoff": "Intentional handoff",
+            "kde_handoff": "KDE Handoff",
+            "intentional_handoff": "KDE Handoff",
             "missing": "Missing tools",
-            "requires_admin": "Requires admin",
+            "requires_admin": "Requires Admin",
         }.get(self.code, "Missing tools")
+
+    @property
+    def support_level(self) -> str:
+        return support_level_for_status(self)
+
+    @property
+    def support_ui_kind(self) -> str:
+        return support_ui_kind(self.support_level)
 
 
 def connected(summary: str, *, details: list[str] | None = None, advanced_module: str | None = None) -> BackendStatus:
@@ -93,3 +121,12 @@ def result_payload(
         "warnings": warnings or [],
         "requires": requires or [],
     }
+
+
+def support_level_for_status(status_or_code: BackendStatus | str) -> str:
+    code = status_or_code.code if isinstance(status_or_code, BackendStatus) else str(status_or_code)
+    return SUPPORT_LEVELS.get(code, "Unsupported")
+
+
+def support_ui_kind(level: str) -> str:
+    return SUPPORT_UI_KINDS.get(level, "skip")

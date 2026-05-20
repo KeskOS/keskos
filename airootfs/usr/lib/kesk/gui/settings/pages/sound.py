@@ -3,7 +3,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox, QComboBox, QLabel, QSlider
 
-from ..widgets import SettingsSection, StatusLabel, action_bar, info_list, populate_combo, select_combo_value, small_button
+from ..backends.common import support_level_for_status
+from ..widgets import SupportBadge, SettingsSection, StatusLabel, action_bar, info_list, populate_combo, select_combo_value, small_button
 from .base import BasePage
 
 
@@ -18,7 +19,9 @@ class SoundPage(BasePage):
 
     def _build_ui(self) -> None:
         status = SettingsSection("Backend status", "PipeWire or PulseAudio compatibility is used for direct device and volume control.")
+        self.support_badge = SupportBadge("Loading", "work")
         self.status_label = StatusLabel("Loading backend status", "work")
+        status.add_row("Support level", "Official support level for audio routing controls on this system.", self.support_badge, keywords="sound support level")
         status.add_row("Audio backend", "Current availability for audio routing and volume control.", self.status_label, keywords="audio backend status")
         self.add_section(status)
 
@@ -68,6 +71,7 @@ class SoundPage(BasePage):
         self.begin_refresh()
         state = self.backend.sound_state()
         status = state["status"]
+        self.support_badge.set_support(support_level_for_status(status))
         self.status_label.set_status(status.summary, status.ui_kind)
         self.output_device.setText(str(state["default_sink"]))
         self.input_device.setText(str(state["default_source"]))

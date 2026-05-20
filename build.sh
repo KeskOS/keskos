@@ -422,6 +422,7 @@ stage_live_system_assets() {
   mkdir -p \
     "${root}/usr/bin" \
     "${root}/usr/share/konsole" \
+    "${root}/usr/share/Kvantum" \
     "${root}/usr/share/color-schemes" \
     "${root}/usr/share/icons/hicolor/48x48/apps" \
     "${root}/usr/share/icons/hicolor/64x64/apps" \
@@ -443,7 +444,11 @@ stage_live_system_assets() {
 
   install -m 644 "${REPO_ROOT}/configs/konsole/KeskOS.colorscheme" "${root}/usr/share/konsole/KeskOS.colorscheme"
   install -m 644 "${REPO_ROOT}/configs/konsole/KeskOS.profile" "${root}/usr/share/konsole/KeskOS.profile"
+  install -m 644 "${REPO_ROOT}/configs/kde/KeskOSDark.colors" "${root}/usr/share/color-schemes/KeskOSDark.colors"
   install -m 644 "${REPO_ROOT}/configs/kde/keskos.colors" "${root}/usr/share/color-schemes/KESKOS.colors"
+  if [[ -d "${REPO_ROOT}/configs/Kvantum/KeskOS" ]]; then
+    cp -a "${REPO_ROOT}/configs/Kvantum/KeskOS" "${root}/usr/share/Kvantum/"
+  fi
   cp -a "${REPO_ROOT}/configs/plasma/desktoptheme/keskos-shell" "${root}/usr/share/plasma/desktoptheme/"
   cp -a "${REPO_ROOT}/configs/aurorae/themes/KeskOS-SPLIT" "${root}/usr/share/aurorae/themes/"
   cp -a "${REPO_ROOT}/configs/kwin/decorations/kwin4_decoration_qml_keskos_split" "${root}/usr/share/kwin/decorations/"
@@ -485,9 +490,18 @@ stage_live_system_assets() {
 
 stage_application_entries() {
   local root="${STAGE_DIR}/airootfs"
-  mkdir -p "${root}/usr/share/applications" "${root}/etc/skel/Desktop"
+  local entry_name=""
 
-  cp -a "${REPO_ROOT}/desktop/." "${root}/usr/share/applications/"
+  mkdir -p "${root}/usr/share/applications" "${root}/usr/local/share/applications" "${root}/etc/skel/Desktop"
+
+  for entry_name in "${REPO_ROOT}"/desktop/*; do
+    [[ -f "$entry_name" ]] || continue
+    if [[ "$(basename "$entry_name")" == "systemsettings.desktop" ]]; then
+      install -m 644 "$entry_name" "${root}/usr/local/share/applications/systemsettings.desktop"
+    else
+      install -m 644 "$entry_name" "${root}/usr/share/applications/$(basename "$entry_name")"
+    fi
+  done
   install -m 644 "${REPO_ROOT}/airootfs/usr/share/applications/install-keskos.desktop" "${root}/usr/share/applications/install-keskos.desktop"
   install -m 755 "${REPO_ROOT}/airootfs/etc/skel/Desktop/Install KeskOS.desktop" "${root}/etc/skel/Desktop/Install KeskOS.desktop"
 }
