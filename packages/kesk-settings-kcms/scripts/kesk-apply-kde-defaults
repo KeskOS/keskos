@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+kwriteconfig_bin="$(command -v kwriteconfig6 || command -v kwriteconfig5 || true)"
+plasma_apply_colorscheme_bin="$(command -v plasma-apply-colorscheme || true)"
+plasma_apply_lookandfeel_bin="$(command -v plasma-apply-lookandfeel || true)"
+lookandfeeltool_bin="$(command -v lookandfeeltool || true)"
+
+[[ -n "$kwriteconfig_bin" ]] || {
+  printf 'kesk-apply-kde-defaults: kwriteconfig was not found\n' >&2
+  exit 1
+}
+
+if [[ -n "$plasma_apply_lookandfeel_bin" ]]; then
+  "$plasma_apply_lookandfeel_bin" org.kde.breezedark.desktop >/dev/null 2>&1 || true
+elif [[ -n "$lookandfeeltool_bin" ]]; then
+  "$lookandfeeltool_bin" -a org.kde.breezedark.desktop >/dev/null 2>&1 || true
+fi
+
+if [[ -n "$plasma_apply_colorscheme_bin" ]]; then
+  "$plasma_apply_colorscheme_bin" BreezeDark >/dev/null 2>&1 || true
+fi
+
+"$kwriteconfig_bin" --file "$HOME/.config/kdeglobals" --group General --key ColorScheme BreezeDark
+"$kwriteconfig_bin" --file "$HOME/.config/kdeglobals" --group General --key AccentColor '#3daee9'
+"$kwriteconfig_bin" --file "$HOME/.config/kdeglobals" --group KDE --key widgetStyle Breeze
+"$kwriteconfig_bin" --file "$HOME/.config/kdeglobals" --group Icons --key Theme breeze-dark
+"$kwriteconfig_bin" --file "$HOME/.config/kcminputrc" --group Mouse --key cursorTheme breeze_cursors
+"$kwriteconfig_bin" --file "$HOME/.config/plasmarc" --group Theme --key name default
+"$kwriteconfig_bin" --file "$HOME/.config/kwinrc" --group org.kde.kdecoration2 --key theme Breeze
+"$kwriteconfig_bin" --file "$HOME/.config/kdeglobals" --group General --key font 'Noto Sans,10,-1,5,50,0,0,0,0,0'
+"$kwriteconfig_bin" --file "$HOME/.config/kdeglobals" --group General --key fixed 'Noto Sans Mono,10,-1,5,50,0,0,0,0,0'
+
+printf 'Applied KDE defaults (Breeze Dark)\n'

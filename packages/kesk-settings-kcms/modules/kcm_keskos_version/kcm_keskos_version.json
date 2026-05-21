@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Description": "View KeskOS build and system version information.",
+        "FormFactors": [
+            "desktop"
+        ],
+        "Icon": "computer-symbolic",
+        "Name": "KeskOS Version"
+    },
+    "X-KDE-Keywords": "version,build,commit,kernel,qt,plasma,frameworks,website,docs,github",
+    "X-KDE-System-Settings-Parent-Category": "keskos",
+    "X-KDE-Weight": 60
+}

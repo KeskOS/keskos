@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Description": "Choose the default browser and apply KeskOS browser settings.",
+        "FormFactors": [
+            "desktop"
+        ],
+        "Icon": "internet-web-browser",
+        "Name": "Browser Defaults"
+    },
+    "X-KDE-Keywords": "browser,librewolf,brave,zen,firefox,homepage,default browser,start page",
+    "X-KDE-System-Settings-Parent-Category": "keskos",
+    "X-KDE-Weight": 40
+}

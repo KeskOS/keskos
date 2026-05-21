@@ -368,11 +368,10 @@ clear_application_shortcut() {
 configure_shortcuts() {
   local shortcuts_file="$TARGET_HOME/.config/kglobalshortcutsrc"
   local kwin_file="$TARGET_HOME/.config/kwinrc"
-  local meta_action="org.kde.plasmashell,/PlasmaShell,org.kde.PlasmaShell,activateLauncherMenu"
 
   [[ -n "$kwriteconfig_bin" ]] || return 0
 
-  "$kwriteconfig_bin" --file "$kwin_file" --group ModifierOnlyShortcuts --key Meta "$meta_action"
+  "$kwriteconfig_bin" --file "$kwin_file" --group ModifierOnlyShortcuts --key Meta --delete >/dev/null 2>&1 || true
   "$kwriteconfig_bin" --file "$shortcuts_file" --group plasmashell --key "activate application launcher" "Alt+F1,Alt+F1,Activate Application Launcher" >/dev/null 2>&1 || true
   "$kwriteconfig_bin" --file "$shortcuts_file" --group kwin --key "Edit Tiles" "none,none,Toggle Tiles Editor" >/dev/null 2>&1 || true
   "$kwriteconfig_bin" --file "$shortcuts_file" --group kwin --key Overview "none,none,Toggle Overview" >/dev/null 2>&1 || true

@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Description": "Control the KeskOS KDE launcher and panel behavior.",
+        "FormFactors": [
+            "desktop"
+        ],
+        "Icon": "preferences-desktop-plasma",
+        "Name": "Panels & Launcher"
+    },
+    "X-KDE-Keywords": "panel,launcher,meta,meta+q,meta+space,kde launcher,kickoff,layout,workspace switcher,auto-hide",
+    "X-KDE-System-Settings-Parent-Category": "keskos",
+    "X-KDE-Weight": 20
+}

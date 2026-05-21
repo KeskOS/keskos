@@ -15,7 +15,7 @@ Inside that script, the `configure_shortcuts()` function writes to:
 
 ## Global Shortcuts Written By `configure_shortcuts()`
 
-### Modifier-only launcher binding
+### Modifier-only launcher cleanup
 
 Written to:
 
@@ -23,12 +23,8 @@ Written to:
 
 Behavior:
 
-- `Meta`
-  - opens the Plasma application launcher
-
-Technical target:
-
-- `org.kde.plasmashell,/PlasmaShell,org.kde.PlasmaShell,activateLauncherMenu`
+- removes any explicit `Meta` override
+- lets Plasma keep its normal application-launcher behavior for `Meta`
 
 ### Plasma launcher shortcut
 
@@ -101,7 +97,6 @@ These are Qt window shortcuts, not KDE global shortcuts.
 
 The script currently changes or enforces these keys:
 
-- `Meta`
 - `Alt+F1`
 - `Alt+Shift+Tab`
 - `Meta+T`

@@ -1,0 +1,422 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import configparser
+import json
+import shutil
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+
+STARTPAGE_URL = "file:///usr/share/keskos/startpage/index.html"
+THEME_ROOT = Path("/usr/share/keskos/first-run/browser-theme")
+
+
+@dataclass(frozen=True, slots=True)
+class BrowserOption:
+    key: str
+    label: str
+    family: str
+    package_candidates: tuple[str, ...]
+    desktop_ids: tuple[str, ...]
+    executables: tuple[str, ...]
+    config_root: str
+
+
+BROWSERS: tuple[BrowserOption, ...] = (
+    BrowserOption(
+        key="librewolf",
+        label="LibreWolf",
+        family="firefox",
+        package_candidates=("librewolf-bin", "librewolf"),
+        desktop_ids=("librewolf.desktop",),
+        executables=("librewolf",),
+        config_root=".librewolf",
+    ),
+    BrowserOption(
+        key="brave",
+        label="Brave",
+        family="chromium",
+        package_candidates=("brave-bin", "brave-browser", "brave-browser-bin"),
+        desktop_ids=("brave-browser.desktop", "brave.desktop"),
+        executables=("brave-browser", "brave"),
+        config_root=".config/BraveSoftware/Brave-Browser",
+    ),
+    BrowserOption(
+        key="zen",
+        label="Zen Browser",
+        family="firefox",
+        package_candidates=("zen-browser-bin", "zen-browser"),
+        desktop_ids=("zen-browser.desktop", "zen.desktop"),
+        executables=("zen-browser", "zen"),
+        config_root=".zen",
+    ),
+    BrowserOption(
+        key="firefox",
+        label="Firefox",
+        family="firefox",
+        package_candidates=("firefox",),
+        desktop_ids=("firefox.desktop",),
+        executables=("firefox",),
+        config_root=".mozilla/firefox",
+    ),
+)
+
+
+def browser_map() -> dict[str, BrowserOption]:
+    return {browser.key: browser for browser in BROWSERS}
+
+
+def get_browser(key: str) -> BrowserOption:
+    browser = browser_map().get(key)
+    if browser is None:
+        raise SystemExit(f"Unknown browser: {key}")
+    return browser
+
+
+def run(command: list[str], timeout: float = 20.0) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, capture_output=True, text=True, check=False, timeout=timeout)
+
+
+def is_installed(package_name: str) -> bool:
+    return run(["pacman", "-Q", package_name], timeout=8.0).returncode == 0
+
+
+def package_available(package_name: str) -> bool:
+    return run(["pacman", "-Si", package_name], timeout=12.0).returncode == 0
+
+
+def resolve_package(browser: BrowserOption) -> str | None:
+    for candidate in browser.package_candidates:
+        if is_installed(candidate) or package_available(candidate):
+            return candidate
+    return None
+
+
+def resolve_desktop_id(browser: BrowserOption) -> str:
+    for desktop_id in browser.desktop_ids:
+        for root in (Path("/usr/share/applications"), Path.home() / ".local/share/applications"):
+            if (root / desktop_id).exists():
+                return desktop_id
+    return browser.desktop_ids[0]
+
+
+def resolve_executable(browser: BrowserOption) -> str | None:
+    for executable in browser.executables:
+        found = shutil.which(executable)
+        if found:
+            return found
+    return None
+
+
+def current_default_desktop() -> str:
+    xdg_settings = shutil.which("xdg-settings")
+    if xdg_settings:
+        result = run([xdg_settings, "get", "default-web-browser"], timeout=8.0)
+        value = result.stdout.strip()
+        if result.returncode == 0 and value:
+            return value
+
+    parser = configparser.ConfigParser(interpolation=None)
+    mimeapps = Path.home() / ".config" / "mimeapps.list"
+    if mimeapps.exists():
+        parser.read(mimeapps, encoding="utf-8")
+        return parser.get("Default Applications", "x-scheme-handler/https", fallback="").strip()
+
+    return ""
+
+
+def set_default(browser: BrowserOption) -> dict:
+    desktop_id = resolve_desktop_id(browser)
+    details: list[str] = [f"default desktop entry: {desktop_id}"]
+
+    xdg_settings = shutil.which("xdg-settings")
+    if xdg_settings:
+        run([xdg_settings, "set", "default-web-browser", desktop_id], timeout=10.0)
+        details.append("xdg-settings updated")
+
+    xdg_mime = shutil.which("xdg-mime")
+    if xdg_mime:
+        for mime in (
+            "x-scheme-handler/http",
+            "x-scheme-handler/https",
+            "text/html",
+            "application/xhtml+xml",
+        ):
+            run([xdg_mime, "default", desktop_id, mime], timeout=10.0)
+        details.append("xdg-mime defaults updated")
+
+    mimeapps_path = Path.home() / ".config" / "mimeapps.list"
+    parser = configparser.ConfigParser(interpolation=None)
+    if mimeapps_path.exists():
+        parser.read(mimeapps_path, encoding="utf-8")
+    if "Default Applications" not in parser:
+        parser["Default Applications"] = {}
+    defaults = parser["Default Applications"]
+    defaults["x-scheme-handler/http"] = desktop_id
+    defaults["x-scheme-handler/https"] = desktop_id
+    defaults["text/html"] = desktop_id
+    defaults["application/xhtml+xml"] = desktop_id
+    mimeapps_path.parent.mkdir(parents=True, exist_ok=True)
+    with mimeapps_path.open("w", encoding="utf-8") as handle:
+        parser.write(handle)
+    details.append("mimeapps.list updated")
+
+    return {"ok": True, "message": f"{browser.label} is now the default browser.", "details": details}
+
+
+def _find_firefox_profiles(config_root: Path) -> list[Path]:
+    profiles_ini = config_root / "profiles.ini"
+    profiles: list[Path] = []
+    if profiles_ini.exists():
+        current_path = ""
+        is_relative = True
+        for line in profiles_ini.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.startswith("Path="):
+                current_path = line.split("=", 1)[1].strip()
+            elif line.startswith("IsRelative="):
+                is_relative = line.split("=", 1)[1].strip() != "0"
+            elif line.startswith("[") and current_path:
+                profile = config_root / current_path if is_relative else Path(current_path)
+                if profile.is_dir():
+                    profiles.append(profile)
+                current_path = ""
+
+        if current_path:
+            profile = config_root / current_path if is_relative else Path(current_path)
+            if profile.is_dir():
+                profiles.append(profile)
+
+    if profiles:
+        return profiles
+
+    return [path for path in config_root.glob("*.default*") if path.is_dir()]
+
+
+def _write_firefox_userjs(profile_dir: Path, include_homepage: bool) -> None:
+    userjs = profile_dir / "user.js"
+    existing = userjs.read_text(encoding="utf-8", errors="ignore").splitlines() if userjs.exists() else []
+    filtered = [
+        line for line in existing
+        if "toolkit.legacyUserProfileCustomizations.stylesheets" not in line
+        and "browser.startup.homepage" not in line
+        and "browser.startup.page" not in line
+        and "browser.newtabpage.enabled" not in line
+        and "browser.aboutConfig.showWarning" not in line
+        and "browser.shell.checkDefaultBrowser" not in line
+    ]
+    filtered.append('user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);')
+    filtered.append('user_pref("browser.aboutConfig.showWarning", false);')
+    filtered.append('user_pref("browser.shell.checkDefaultBrowser", false);')
+    if include_homepage:
+        filtered.append(f'user_pref("browser.startup.homepage", "{STARTPAGE_URL}");')
+        filtered.append('user_pref("browser.startup.page", 1);')
+        filtered.append('user_pref("browser.newtabpage.enabled", false);')
+    userjs.write_text("\n".join(filtered).rstrip() + "\n", encoding="utf-8")
+
+
+def _apply_firefox(browser: BrowserOption, include_homepage: bool) -> dict:
+    config_root = Path.home() / browser.config_root
+    if not config_root.exists():
+        return {
+            "ok": False,
+            "message": "Browser profile directory was not found yet. Launch the browser once before applying the theme.",
+            "status": "partial",
+        }
+
+    profiles = _find_firefox_profiles(config_root)
+    if not profiles:
+        return {
+            "ok": False,
+            "message": "Browser profile was not created yet. Launch the browser once before applying the theme.",
+            "status": "partial",
+        }
+
+    for profile in profiles:
+        chrome_dir = profile / "chrome"
+        chrome_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(THEME_ROOT / "firefox-userChrome.css", chrome_dir / "userChrome.css")
+        shutil.copy2(THEME_ROOT / "firefox-userContent.css", chrome_dir / "userContent.css")
+        _write_firefox_userjs(profile, include_homepage)
+
+    return {
+        "ok": True,
+        "message": f"Applied KeskOS browser styling to {len(profiles)} {browser.label} profile(s).",
+        "status": "applied",
+    }
+
+
+def _apply_brave(include_homepage: bool) -> dict:
+    preferences_path = Path.home() / ".config/BraveSoftware/Brave-Browser/Default/Preferences"
+    if not preferences_path.exists():
+        return {
+            "ok": False,
+            "message": "Brave profile data was not found yet. Launch Brave once before applying the theme.",
+            "status": "partial",
+        }
+
+    data = json.loads(preferences_path.read_text(encoding="utf-8"))
+    data.setdefault("browser", {})["show_home_button"] = True
+    if include_homepage:
+        data["homepage"] = STARTPAGE_URL
+        data["homepage_is_newtabpage"] = False
+        data.setdefault("session", {})["restore_on_startup"] = 4
+        data["session"]["startup_urls"] = [STARTPAGE_URL]
+    preferences_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    return {
+        "ok": True,
+        "message": "Applied KeskOS browser settings to Brave. Chromium browser chrome theming remains limited.",
+        "status": "partial",
+    }
+
+
+def apply_theme(browser: BrowserOption, include_homepage: bool) -> dict:
+    if browser.family == "firefox":
+        return _apply_firefox(browser, include_homepage)
+    if browser.family == "chromium":
+        return _apply_brave(include_homepage)
+    return {"ok": False, "message": "No supported theme handler was found for this browser.", "status": "unsupported"}
+
+
+def _reset_firefox(browser: BrowserOption) -> dict:
+    config_root = Path.home() / browser.config_root
+    profiles = _find_firefox_profiles(config_root) if config_root.exists() else []
+    if not profiles:
+        return {"ok": False, "message": "No browser profile was found to reset.", "status": "partial"}
+
+    for profile in profiles:
+        for file_name in ("userChrome.css", "userContent.css"):
+            target = profile / "chrome" / file_name
+            if target.exists():
+                target.unlink()
+
+        userjs = profile / "user.js"
+        if userjs.exists():
+            filtered = [
+                line for line in userjs.read_text(encoding="utf-8", errors="ignore").splitlines()
+                if "toolkit.legacyUserProfileCustomizations.stylesheets" not in line
+                and "browser.startup.homepage" not in line
+                and "browser.startup.page" not in line
+                and "browser.newtabpage.enabled" not in line
+                and "browser.aboutConfig.showWarning" not in line
+                and "browser.shell.checkDefaultBrowser" not in line
+            ]
+            userjs.write_text("\n".join(filtered).rstrip() + ("\n" if filtered else ""), encoding="utf-8")
+
+    return {"ok": True, "message": f"Removed KeskOS browser overrides from {browser.label}.", "status": "reset"}
+
+
+def _reset_brave() -> dict:
+    preferences_path = Path.home() / ".config/BraveSoftware/Brave-Browser/Default/Preferences"
+    if not preferences_path.exists():
+        return {"ok": False, "message": "No Brave profile was found to reset.", "status": "partial"}
+
+    data = json.loads(preferences_path.read_text(encoding="utf-8"))
+    data.pop("homepage", None)
+    data.pop("homepage_is_newtabpage", None)
+    if "browser" in data:
+        data["browser"].pop("show_home_button", None)
+    if "session" in data:
+        data["session"].pop("restore_on_startup", None)
+        data["session"].pop("startup_urls", None)
+    preferences_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return {"ok": True, "message": "Removed KeskOS browser overrides from Brave.", "status": "reset"}
+
+
+def reset_browser(browser: BrowserOption) -> dict:
+    if browser.family == "firefox":
+        return _reset_firefox(browser)
+    if browser.family == "chromium":
+        return _reset_brave()
+    return {"ok": False, "message": "No reset handler is available for this browser.", "status": "unsupported"}
+
+
+def launch_install(browser: BrowserOption) -> dict:
+    package_name = resolve_package(browser)
+    if not package_name:
+        return {"ok": False, "message": f"{browser.label} is not available in the configured repositories."}
+
+    try:
+        subprocess.Popen(["pkexec", "pacman", "-S", "--needed", "--noconfirm", package_name])
+    except OSError as error:
+        return {"ok": False, "message": str(error)}
+
+    return {"ok": True, "message": f"Started install for {browser.label} using {package_name}.", "package": package_name}
+
+
+def status_payload() -> dict:
+    current_default = current_default_desktop()
+    entries: list[dict] = []
+
+    for browser in BROWSERS:
+        package_name = resolve_package(browser)
+        executable = resolve_executable(browser)
+        desktop_id = resolve_desktop_id(browser)
+        installed = bool(package_name and is_installed(package_name))
+        available = package_name is not None
+        entries.append(
+            {
+                "key": browser.key,
+                "label": browser.label,
+                "desktop_id": desktop_id,
+                "package_name": package_name or "",
+                "installed": installed,
+                "available": available,
+                "current_default": current_default == desktop_id,
+                "executable": executable or "",
+                "homepage_assets_available": THEME_ROOT.exists() and Path("/usr/share/keskos/startpage/index.html").exists(),
+            }
+        )
+
+    return {"browsers": entries, "current_default_desktop": current_default}
+
+
+def print_json(payload: dict) -> int:
+    print(json.dumps(payload))
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="KeskOS browser settings helper")
+    subparsers = parser.add_subparsers(dest="action", required=True)
+    subparsers.add_parser("status")
+
+    set_default_parser = subparsers.add_parser("set-default")
+    set_default_parser.add_argument("browser")
+
+    apply_theme_parser = subparsers.add_parser("apply-theme")
+    apply_theme_parser.add_argument("browser")
+    apply_theme_parser.add_argument("--homepage", choices=("yes", "no"), default="yes")
+
+    reset_parser = subparsers.add_parser("reset")
+    reset_parser.add_argument("browser")
+
+    install_parser = subparsers.add_parser("install")
+    install_parser.add_argument("browser")
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    if args.action == "status":
+        return print_json(status_payload())
+
+    browser = get_browser(args.browser)
+    if args.action == "set-default":
+        return print_json(set_default(browser))
+    if args.action == "apply-theme":
+        return print_json(apply_theme(browser, args.homepage == "yes"))
+    if args.action == "reset":
+        return print_json(reset_browser(browser))
+    if args.action == "install":
+        return print_json(launch_install(browser))
+    return print_json({"ok": False, "message": "Unknown action."})
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

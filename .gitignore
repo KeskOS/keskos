@@ -9,3 +9,7 @@ out/
 .old_experiments
 /docs/website-content
 .themes
+packages/*/pkg/
+packages/*/src/
+packages/*/modules/build/
+packages/*/*.pkg.tar.zst

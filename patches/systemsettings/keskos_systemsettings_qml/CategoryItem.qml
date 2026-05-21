@@ -12,12 +12,14 @@ ItemDelegate {
     id: delegate
 
     property bool showArrow: false
-    property bool selected: delegate.highlighted || delegate.pressed
+    property bool selected: delegate.highlighted
     property bool isSearching: false
     property real leadingPadding: 0
     readonly property color keskAccent: "#ce6a35"
-    readonly property color outlineColor: selected ? keskAccent : (hovered && enabled ? Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.55) : "transparent")
-    readonly property color fillColor: selected ? "#11100e" : (pressed ? Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.14) : (hovered && enabled ? Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.08) : "transparent"))
+    readonly property color outlineColor: selected ? keskAccent : (hovered && enabled ? Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.20) : "transparent")
+    readonly property color fillColor: selected ? "#11100e" : (pressed ? Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.10) : (hovered && enabled ? Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.08) : "transparent"))
+    readonly property color itemTextColor: selected ? "#e2d8cf" : (hovered && enabled ? "#d0c7bf" : "#b8afa6")
+    readonly property color itemIconColor: selected ? keskAccent : (hovered && enabled ? "#d0c7bf" : "#8f8a84")
     required property bool showDefaultIndicator
     required property QtObject /*QAction*/ auxiliaryAction
 
@@ -40,22 +42,44 @@ ItemDelegate {
             rightMargin: Kirigami.Units.smallSpacing
         }
         height: Math.max(parent.height - 2, 1)
-        radius: delegate.selected || delegate.hovered ? 2 : 0
+        radius: delegate.selected || delegate.hovered ? 1 : 0
         color: delegate.fillColor
         border.width: delegate.selected || (delegate.hovered && delegate.enabled) ? 1 : 0
         border.color: delegate.outlineColor
+
+        Rectangle {
+            anchors {
+                left: parent.left
+                top: parent.top
+                bottom: parent.bottom
+            }
+            width: 3
+            color: delegate.keskAccent
+            visible: delegate.selected
+        }
     }
 
     contentItem: RowLayout {
         spacing: Kirigami.Units.smallSpacing
 
-        Kirigami.IconTitleSubtitle {
+        Kirigami.Icon {
+            id: itemIcon
+            Layout.alignment: Qt.AlignVCenter
+            Layout.leftMargin: delegate.leadingPadding + (delegate.selected ? Kirigami.Units.smallSpacing : 0)
+            Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
+            Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
+            source: delegate.icon.name !== "" ? delegate.icon.name : delegate.icon.source
+            color: delegate.itemIconColor
+        }
+
+        Label {
             id: titleItem
             Layout.fillWidth: true
-            Layout.leftMargin: delegate.leadingPadding
-            icon: icon.fromControlsIcon(delegate.icon)
-            title: delegate.text
-            selected: delegate.selected
+            color: delegate.itemTextColor
+            text: delegate.text
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+            textFormat: Text.PlainText
         }
 
         Rectangle {
@@ -76,7 +100,7 @@ ItemDelegate {
                 id: auxiliaryButton
 
                 implicitWidth: height
-                implicitHeight: titleItem.height
+                implicitHeight: Math.max(titleItem.implicitHeight, Kirigami.Units.gridUnit)
                 icon.color: delegate.selected || pressed || visualFocus || hovered ? delegate.keskAccent : palette.buttonText
 
                 display: AbstractButton.IconOnly
@@ -87,8 +111,8 @@ ItemDelegate {
                 }
 
                 background: Rectangle {
-                    radius: auxiliaryButton.hovered || auxiliaryButton.pressed || auxiliaryButton.visualFocus ? 2 : 0
-                    color: auxiliaryButton.pressed ? Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.14) : "#11100e"
+                    radius: auxiliaryButton.hovered || auxiliaryButton.pressed || auxiliaryButton.visualFocus ? 1 : 0
+                    color: auxiliaryButton.pressed ? Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.10) : "#11100e"
                     border.width: auxiliaryButton.hovered || auxiliaryButton.pressed || auxiliaryButton.visualFocus ? 1 : 0
                     border.color: auxiliaryButton.hovered || auxiliaryButton.pressed || auxiliaryButton.visualFocus ? delegate.keskAccent : "transparent"
                 }
@@ -143,7 +167,7 @@ ItemDelegate {
 
             opacity: delegate.showArrow ? 0.7 : 0.0
             source: LayoutMirroring.enabled ? "go-next-symbolic-rtl" : "go-next-symbolic"
-            selected: delegate.selected
+            color: delegate.selected ? delegate.keskAccent : delegate.itemIconColor
             visible: !delegate.auxiliaryAction?.visible ?? true
         }
     }

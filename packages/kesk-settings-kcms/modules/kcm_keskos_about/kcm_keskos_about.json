@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Description": "View KeskOS links and project information.",
+        "FormFactors": [
+            "desktop"
+        ],
+        "Icon": "help-about",
+        "Name": "About This System"
+    },
+    "X-KDE-Keywords": "about,system,website,docs,documentation,github,keskos,version,project",
+    "X-KDE-System-Settings-Parent-Category": "system-administration",
+    "X-KDE-Weight": 65
+}

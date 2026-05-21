@@ -19,6 +19,7 @@ GNUPG_BUILD_HOME="${SAFE_BUILD_ROOT}/gnupg"
 SOURCE_DATE="${SOURCE_DATE_EPOCH:-$(date +%s)}"
 ISO_VERSION="${KESKOS_ISO_VERSION:-$(date --date="@${SOURCE_DATE}" +%Y.%m.%d)}"
 REPO_PACKAGES=(systemsettings)
+LOCAL_PACKAGES=(kesk-settings-kcms)
 AUR_PACKAGES=(calamares librewolf-bin zen-browser-bin brave-bin)
 SKIP_PGP_FALLBACK_PACKAGES=(librewolf-bin zen-browser-bin brave-bin)
 
@@ -400,6 +401,26 @@ PY
   find "$AUR_PKGDEST" -maxdepth 1 -type f -name "${package_name}-*.pkg.tar.*" -exec cp -f {} "$LOCAL_REPO_DIR/" \;
 }
 
+build_local_package() {
+  local package_name="$1"
+  local source_dir="${REPO_ROOT}/packages/${package_name}"
+  local build_dir="${SAFE_BUILD_ROOT}/local-packages/${package_name}"
+
+  [[ -f "${source_dir}/PKGBUILD" ]] || fail "Local package source was not found: ${source_dir}"
+
+  rm -rf "$build_dir"
+  mkdir -p "$(dirname "$build_dir")"
+  cp -a "$source_dir" "$build_dir"
+
+  log "Building local package ${package_name}..."
+  (
+    cd "$build_dir"
+    PKGDEST="${AUR_PKGDEST}" makepkg --syncdeps --needed --noconfirm --cleanbuild --clean
+  )
+
+  find "$AUR_PKGDEST" -maxdepth 1 -type f -name "${package_name}-*.pkg.tar.*" -exec cp -f {} "$LOCAL_REPO_DIR/" \;
+}
+
 refresh_local_repo() {
   log "Refreshing the local pacman repository..."
   rm -f "${LOCAL_REPO_DIR}"/keskos-local.db* "${LOCAL_REPO_DIR}"/keskos-local.files*
@@ -619,6 +640,10 @@ main() {
 
   for package_name in "${REPO_PACKAGES[@]}"; do
     build_repo_package "$package_name"
+  done
+
+  for package_name in "${LOCAL_PACKAGES[@]}"; do
+    build_local_package "$package_name"
   done
 
   for package_name in "${AUR_PACKAGES[@]}"; do

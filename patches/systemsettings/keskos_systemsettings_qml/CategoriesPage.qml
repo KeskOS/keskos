@@ -15,6 +15,8 @@ import org.kde.systemsettings
 Kirigami.ScrollablePage {
     id: mainColumn
     readonly property bool searchMode: searchField.text.length > 0
+    readonly property color keskAccent: "#ce6a35"
+    verticalScrollBarPolicy: QQC2.ScrollBar.AlwaysOff
 
     Kirigami.Theme.colorSet: Kirigami.Theme.View
     Kirigami.Theme.inherit: false
@@ -33,11 +35,29 @@ Kirigami.ScrollablePage {
             icon.name: "go-previous"
         }
 
+        background: Rectangle {
+            color: "#050505"
+
+            Rectangle {
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    bottom: parent.bottom
+                }
+                height: 1
+                color: Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.35)
+            }
+        }
+
         contentItem: RowLayout {
             id: rowLayout
             // FIXME: left and right anchors shouldn't be needed here, but if
             // they're removed, the layout doesn't span the full width
-            anchors.fill: parent
+            anchors {
+                fill: parent
+                leftMargin: Kirigami.Units.smallSpacing
+                rightMargin: Kirigami.Units.smallSpacing
+            }
             spacing: Kirigami.Units.smallSpacing
 
             Keys.onDownPressed: event => {
@@ -52,19 +72,21 @@ Kirigami.ScrollablePage {
 
                 focus: !Kirigami.InputMethod.willShowOnActive
                 Layout.fillWidth: true
+                Layout.preferredHeight: Math.round(Kirigami.Units.gridUnit * 1.65)
+                Layout.alignment: Qt.AlignVCenter
                 color: "#b8afa6"
                 placeholderTextColor: "#8f8a84"
                 leftPadding: Kirigami.Units.smallSpacing * 2
                 rightPadding: Kirigami.Units.smallSpacing * 2
-                topPadding: Kirigami.Units.smallSpacing
-                bottomPadding: Kirigami.Units.smallSpacing
+                topPadding: Kirigami.Units.smallSpacing * 0.75
+                bottomPadding: Kirigami.Units.smallSpacing * 0.75
                 onTextChanged: {
                     systemsettings.searchModel.filterRegExp = text;
                 }
 
                 background: Rectangle {
-                    radius: 2
-                    color: "#11100e"
+                    radius: 1
+                    color: "#050505"
                     border.width: 1
                     border.color: searchField.activeFocus ? searchField.keskAccent : Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.35)
                 }
@@ -153,12 +175,53 @@ Kirigami.ScrollablePage {
 
         section {
             property: "categoryDisplayRole"
-            delegate: Kirigami.ListSectionHeader {
-
+            delegate: Item {
                 required property string section
 
                 width: ListView.view.width
-                label: section
+                implicitHeight: Math.round(Kirigami.Units.gridUnit * 1.1)
+
+                RowLayout {
+                    anchors {
+                        fill: parent
+                        leftMargin: Kirigami.Units.smallSpacing * 2
+                        rightMargin: Kirigami.Units.smallSpacing * 2
+                    }
+                    spacing: Kirigami.Units.smallSpacing
+
+                    QQC2.Label {
+                        text: section
+                        color: "#8f8a84"
+                        font.weight: Font.DemiBold
+                        textFormat: Text.PlainText
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        implicitHeight: 1
+                        color: Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.18)
+                    }
+                }
+            }
+        }
+
+        QQC2.ScrollBar.vertical: QQC2.ScrollBar {
+            id: categoryScrollBar
+            width: 6
+            policy: QQC2.ScrollBar.AsNeeded
+
+            background: Rectangle {
+                color: "#050505"
+                radius: 0
+            }
+
+            contentItem: Rectangle {
+                implicitWidth: 6
+                radius: 0
+                color: categoryScrollBar.pressed || categoryScrollBar.hovered
+                    ? "#ce6a35"
+                    : Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.45)
             }
         }
 

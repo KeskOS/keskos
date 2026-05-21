@@ -17,6 +17,8 @@ import org.kde.systemsettings
 Kirigami.ScrollablePage {
     id: subCategoryColumn
     title: systemsettings.subCategoryModel.title
+    readonly property color keskAccent: "#ce6a35"
+    verticalScrollBarPolicy: QQC2.ScrollBar.AlwaysOff
 
     Kirigami.Theme.colorSet: Kirigami.Theme.View
     Kirigami.Theme.inherit: false
@@ -24,11 +26,29 @@ Kirigami.ScrollablePage {
     header: Kirigami.AbstractApplicationHeader {
         id: pageHeader
 
+        background: Rectangle {
+            color: "#050505"
+
+            Rectangle {
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    bottom: parent.bottom
+                }
+                height: 1
+                color: Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.35)
+            }
+        }
+
         contentItem: RowLayout {
             id: rowLayout
             // FIXME: left and right anchors shouldn't be needed here, but if
             // they're removed, the layout doesn't span the full width
-            anchors.fill: parent
+            anchors {
+                fill: parent
+                leftMargin: Kirigami.Units.smallSpacing
+                rightMargin: Kirigami.Units.smallSpacing
+            }
             spacing: Kirigami.Units.smallSpacing
 
             Keys.onDownPressed: event => {
@@ -49,8 +69,8 @@ Kirigami.ScrollablePage {
                 padding: Kirigami.Units.smallSpacing
 
                 background: Rectangle {
-                    radius: backButton.hovered || backButton.pressed || backButton.visualFocus ? 2 : 0
-                    color: backButton.pressed ? Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.14) : "#11100e"
+                    radius: backButton.hovered || backButton.pressed || backButton.visualFocus ? 1 : 0
+                    color: backButton.pressed ? Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.10) : "#050505"
                     border.width: 1
                     border.color: backButton.hovered || backButton.pressed || backButton.visualFocus ? backButton.keskAccent : Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.35)
                 }
@@ -83,7 +103,7 @@ Kirigami.ScrollablePage {
                         Layout.fillHeight: true
                         level: 4
                         text: subCategoryColumn.title
-                        color: backButton.hovered || backButton.pressed || backButton.visualFocus ? backButton.keskAccent : Kirigami.Theme.textColor
+                        color: backButton.hovered || backButton.pressed || backButton.visualFocus ? backButton.keskAccent : "#e2d8cf"
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                         textFormat: Text.PlainText
@@ -111,6 +131,7 @@ Kirigami.ScrollablePage {
                 Layout.leftMargin: backIcon.visible ? 0 : Kirigami.Units.smallSpacing
                 level: 3
                 text: subCategoryColumn.title
+                color: "#e2d8cf"
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
                 textFormat: Text.PlainText
@@ -154,6 +175,25 @@ Kirigami.ScrollablePage {
         }
         Keys.onTabPressed: event => {
             systemsettings.focusNext();
+        }
+
+        QQC2.ScrollBar.vertical: QQC2.ScrollBar {
+            id: subCategoryScrollBar
+            width: 6
+            policy: QQC2.ScrollBar.AsNeeded
+
+            background: Rectangle {
+                color: "#050505"
+                radius: 0
+            }
+
+            contentItem: Rectangle {
+                implicitWidth: 6
+                radius: 0
+                color: subCategoryScrollBar.pressed || subCategoryScrollBar.hovered
+                    ? "#ce6a35"
+                    : Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.45)
+            }
         }
 
         onCountChanged: {

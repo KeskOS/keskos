@@ -32,8 +32,8 @@ QQC2.ToolButton {
     }
 
     background: Rectangle {
-        radius: control.checked || control.hovered || control.pressed || control.visualFocus ? 2 : 0
-        color: control.pressed || control.checked ? Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.12) : "#11100e"
+        radius: control.checked || control.hovered || control.pressed || control.visualFocus ? 1 : 0
+        color: control.pressed || control.checked ? Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.10) : "#050505"
         border.width: 1
         border.color: control.checked || control.hovered || control.pressed || control.visualFocus ? control.keskAccent : Qt.rgba(206 / 255, 106 / 255, 53 / 255, 0.35)
     }

@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Description": "Control the KeskOS top bar widgets.",
+        "FormFactors": [
+            "desktop"
+        ],
+        "Icon": "view-list-details",
+        "Name": "Top Bar Widgets"
+    },
+    "X-KDE-Keywords": "top bar,hud,widgets,media,cpu,memory,network,quickshell",
+    "X-KDE-System-Settings-Parent-Category": "keskos",
+    "X-KDE-Weight": 30
+}

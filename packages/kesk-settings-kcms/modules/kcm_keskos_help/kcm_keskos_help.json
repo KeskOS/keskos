@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Description": "Open the official KeskOS documentation and troubleshooting pages.",
+        "FormFactors": [
+            "desktop"
+        ],
+        "Icon": "help-contents",
+        "Name": "Help"
+    },
+    "X-KDE-Keywords": "help,docs,documentation,troubleshooting,install guides,keskos",
+    "X-KDE-System-Settings-Parent-Category": "system-administration",
+    "X-KDE-Weight": 70
+}

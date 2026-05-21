@@ -1,37 +1,17 @@
 # Kesk Settings
 
-KeskOS now uses the real KDE Plasma System Settings application as the official settings app.
+KeskOS uses the real KDE Plasma System Settings application as the official settings app.
 
-The branded launcher name is:
+The branded launcher is:
 
 - `Kesk Settings`
 
-But it launches:
+It launches:
 
 - `systemsettings`
 
-This phase does not replace KDE settings backends, does not fork System Settings, and does not add custom KeskOS KCM modules yet.
-
-## Phase 1 Scope
-
-Phase 1 only changes the presentation and default wiring around the existing KDE app:
-
-- official KDE color scheme: `KeskOSDark`
-- Kvantum widget style with the sharp `KeskOS` theme when the engine is available
-- Breeze widget style as the safe fallback when Kvantum is unavailable
-- existing KeskOS Plasma theme and window decoration where already available
-- icon and cursor defaults applied with safe Breeze fallbacks
-- branded launcher entry for the real KDE app
-
-Phase 1 does not do any of the following:
-
-- custom KCM modules
-- hidden or removed KDE settings modules
-- repair dashboards
-- update dashboards
-- Docker tooling
-- log viewers
-- package-manager frontends
+KeskOS does not replace KDE’s settings backends with a custom dashboard app.
+Display, sound, networking, accessibility, users, defaults, file associations, power, notifications, and the rest of the normal KDE settings flow still come from the real Plasma KCM stack.
 
 ## Official Launcher
 
@@ -39,39 +19,29 @@ The user-facing launcher is:
 
 - `desktop/kesk-settings.desktop`
 
-It is branded as:
+Important values:
 
 - `Name=Kesk Settings`
 - `Comment=Configure KeskOS and KDE Plasma settings`
 - `Exec=systemsettings`
 - `Icon=preferences-system`
 
-The upstream KDE menu entry is hidden by a local override so the branded KeskOS launcher is the visible one:
+The upstream KDE launcher is hidden with a local override so the branded KeskOS entry is the visible one:
 
 - `desktop/systemsettings.desktop`
 
-During image staging that override is installed under:
-
-- `/usr/local/share/applications/systemsettings.desktop`
-
-The old custom PySide settings app is archived in:
-
-- `.old_experiments/kesk-settings-pyside/`
-
-It is not part of the active launcher path and it is not included in the ISO.
+The archived old PySide replacement UI is not part of the live launcher path and is not the default settings app anymore.
 
 ## Command Behavior
 
-These commands are now the intended entry points:
+These commands are the intended entry points:
 
 ```bash
 systemsettings
 kesk settings
 ```
 
-`kesk settings` now launches the real KDE System Settings app instead of the custom PySide replacement UI.
-
-Useful KCM commands:
+Useful KDE KCM commands:
 
 ```bash
 kcmshell6 --list
@@ -86,33 +56,55 @@ kcmshell6 kcm_pulseaudio
 kcmshell6 kcm_access
 ```
 
-Exact module names vary by distro package set. If one of the example modules is missing, check `kcmshell6 --list` and use the matching module name available on that system.
+Exact KCM names depend on the installed package set.
 
-The old custom GUI is archived for reference only and is no longer shipped in current KeskOS builds.
+## Visual Stack
 
-## KCM Architecture
+Kesk Settings keeps the KDE System Settings structure and pages, then skins them with the KeskOS visual layer:
 
-KDE Plasma System Settings is built around KCM modules.
+- KDE color scheme: `KeskOSDark`
+- optional Kvantum theme: `KeskOS`
+- safe fallback widget style: `Breeze`
+- Plasma theme: `keskos-shell`
+- dark/orange window decoration and title styling where available
+- branded `Kesk Settings` launcher pointing at real `systemsettings`
 
-A KCM is a KDE Configuration Module that can be loaded:
+The visual target is:
 
-- inside `systemsettings`
-- directly with `kcmshell6`
+- near-black backgrounds
+- orange accent `#ce6a35`
+- muted gray text
+- sharp rectangular controls
+- no giant orange slabs
+- no stock Breeze blue accents where safely avoidable
 
-That means KeskOS can extend the real settings app later without forking it.
-Future KeskOS pages should be added as real KCM plugins with metadata, QML/Kirigami UI, and backend logic where needed.
+Theme apply/debug commands:
 
-This phase does not add those plugins yet.
+```bash
+kesk-apply-theme
+kesk-theme-status
+plasma-apply-colorscheme KeskOSDark
+```
 
-## System Settings Cleanup
+Manual checks:
 
-KeskOS also ships a focused System Settings cleanup layer that hides mobile-only, debug/info, and niche KCM modules from the normal Settings UI while keeping the real KDE modules installed.
+```bash
+kreadconfig6 --file ~/.config/kdeglobals --group General --key ColorScheme
+kreadconfig6 --file ~/.config/kdeglobals --group General --key AccentColor
+kreadconfig6 --file ~/.config/kdeglobals --group KDE --key widgetStyle
+```
 
-See:
+## Hidden Stock Modules
 
-- `docs/kde-system-settings-cleanup.md`
+KeskOS keeps the real KDE modules installed, but hides some stock KCMs from the normal System Settings UI for a cleaner default experience.
 
-Useful commands:
+Important examples:
+
+- `User Feedback` is hidden by default
+- the stock KDE `About This System` entry is hidden by default
+- the KeskOS-owned `About This System` page replaces it in the visible UI
+
+Hidden-module tooling:
 
 ```bash
 kesk-list-kcms
@@ -120,176 +112,311 @@ sudo kesk-hide-kcms
 sudo kesk-restore-kcms
 ```
 
-## Theme Defaults
+The default hidden list is:
 
-The official phase 1 visual stack is:
+- `airootfs/usr/share/kesk/settings/hidden-kcms.conf`
 
-- color scheme: `KeskOSDark`
-- widget style: `kvantum`
-- Plasma desktop theme: `keskos-shell`
-- window decoration: `kwin4_decoration_qml_keskos_split`
-- icon fallback: `breeze-dark`
-- cursor fallback: `breeze_cursors`
-- Qt widget engine: `Kvantum` with the `KeskOS` theme when the engine is installed and safe to use
-- fallback Qt widget engine: `Breeze` if Kvantum is missing or unstable
+The optional extra list is:
 
-Palette targets:
+- `airootfs/usr/share/kesk/settings/hidden-kcms-extra.conf`
 
-- main background: `#050505`
-- secondary background: `#070707`
-- card/control background: `#0b0a09` and `#11100e`
-- accent orange: `#ce6a35`
-- text: `#b8afa6`
-- muted text: `#8f8a84`
-- disabled text: `#4c4845`
+## KeskOS Custom Modules
 
-Readable mono-friendly defaults are kept for desktop fonts, preferring:
+KeskOS now adds a small set of real custom KCM pages to the real KDE System Settings app.
 
-- JetBrains Mono
-- Iosevka
-- Noto Sans Mono
+### System
 
-## Real KDE System Settings Theming
+- `About This System`
+  Website, Docs, and GitHub links open the official KeskOS destinations.
+- `Help`
+  Opens `https://docs.keskos.org`.
 
-`Kesk Settings` still opens the real KDE System Settings application.
+### KeskOS
 
-The stronger KeskOS appearance is applied through:
+- `KeskOS Theme`
+- `Panels & Launcher`
+- `Top Bar Widgets`
+- `Browser Defaults`
+- `Boot Splash`
+- `KeskOS Version`
 
-- KDE color scheme
-- KDE globals such as `AccentColor` and `widgetStyle`
-- Kvantum SVG styling for sharper Qt widgets when available
-- Plasma desktop theme
-- icon and cursor theme defaults
-- optional Kvantum widget styling when the engine is available
+These pages keep the normal KDE System Settings layout and navigation model.
+They are not a dashboard replacement.
 
-This means KeskOS can strongly change:
+## Module Details
 
-- backgrounds
-- accent colors
-- button and field colors
-- sidebar selection colors
-- titlebar/decorations
-- font defaults
+### Help
 
-Important detail:
+Purpose:
 
-- a KDE color scheme changes colors
-- the Qt application style changes widget shapes
-- Kvantum is what lets KeskOS remove most of the rounded Breeze feel from buttons, line edits, combo boxes, sliders, and sidebar selections
+- open the official KeskOS documentation from inside System Settings
 
-But KeskOS still cannot fully redesign the System Settings layout without:
+Behavior:
 
-- patching `systemsettings`
-- forking KDE code
-- or adding new custom KCM modules
+- opens `https://docs.keskos.org`
+- uses `xdg-open`
+- if that fails, the UI shows:
+  `Could not open browser. Visit https://docs.keskos.org manually.`
 
-That deeper UI restructuring is intentionally out of scope for this phase.
+Support level:
 
-The old custom settings app has been moved out of the active tree and archived under `.old_experiments/kesk-settings-pyside/`.
+- `Native`
 
-## Theme Apply Path
+### About This System
 
-The active theme application path is now centralized in:
+Purpose:
 
-- `airootfs/usr/bin/kesk-apply-theme`
+- show a short KeskOS-owned system summary
+- provide official link buttons
 
-This script safely and idempotently applies:
+Links:
 
-- `KeskOSDark`
-- `AccentColor=#ce6a35`
-- `Kvantum` with the `KeskOS` theme when available
-- `Breeze` as the safe fallback if Kvantum is missing
-- `keskos-shell` Plasma theme when available
-- icon and cursor theme defaults when available
-- readable mono-ish font defaults
-- the `KeskOS` Kvantum theme if the engine is installed
+- `https://keskos.org`
+- `https://docs.keskos.org`
+- `https://github.com/memegeko/keskos`
 
-The desktop setup flow reuses that same script through:
+Support level:
 
-- `airootfs/usr/local/bin/keskos-configure-user`
+- `Native`
 
-Theme apply logs are written to:
+### KeskOS Theme
 
-- `~/.local/state/kesk/logs/theme-apply.log`
+Purpose:
 
-The theme status/debug command is:
+- manage the current KeskOS visual identity
+- switch between KeskOS styling and KDE defaults
 
-- `airootfs/usr/bin/kesk-theme-status`
+Current rule:
 
-It reports:
+- the KeskOS accent color is fixed to `#ce6a35`
+- custom accent colors are not supported yet
 
-- current KDE color scheme
-- current accent color
-- current widget style
-- current Plasma theme
-- current icon theme
-- current cursor theme
-- current font
-- whether Kvantum is installed
-- current Kvantum theme if present
-- whether the `KeskOS` Kvantum theme assets exist
-- whether the branded launcher still points to `systemsettings`
+Controls:
 
-Relevant files:
+- current accent color display
+- read-only color swatch
+- theme mode display:
+  `KeskOS Orange` or `KDE Defaults`
+- `Apply KeskOS Orange`
+- `Switch to KDE Defaults`
+- `Reset KeskOS Theme`
 
-- `configs/kde/KeskOSDark.colors`
-- `configs/kde/keskos.colors`
-- `configs/Kvantum/KeskOS/`
-- `configs/look-and-feel/com.keskos.desktop/contents/defaults`
-- `airootfs/usr/bin/kesk-apply-theme`
-- `airootfs/usr/bin/kesk-theme-status`
-- `airootfs/usr/local/bin/keskos-configure-user`
+Current implementation:
+
+- `Apply KeskOS Orange` reuses `kesk-apply-theme`
+- `Switch to KDE Defaults` uses `kesk-apply-kde-defaults`
+- the KDE defaults path currently restores a stock Breeze Dark-style stack where safely supported
+
+Support level:
+
+- `Limited`
+
+### Panels & Launcher
+
+Purpose:
+
+- manage the KDE launcher and the KeskOS panel layout
+
+Current rule:
+
+- KeskOS currently uses the KDE launcher only
+- other launcher backends are not available
+
+Controls:
+
+- read-only launcher backend: `KDE Launcher`
+- launcher shortcut:
+  `Meta`
+  `Meta+Q`
+  `Meta+Space`
+- `Reset KDE Launcher Layout`
+- `Reapply KeskOS KDE Panel Layout`
+- disabled placeholders for launcher enabled, panel auto-hide, and workspace switcher where the current backend is not fully wired
+
+Current implementation:
+
+- shortcut changes update KDE shortcut config directly
+- layout reset/reapply uses the existing panel reset flow
+
+Support level:
+
+- `Limited`
+
+### Top Bar Widgets
+
+Purpose:
+
+- manage the KeskOS top bar widget layer
+
+Current rule:
+
+- the visible widgets are:
+  `Media`
+  `CPU`
+  `Memory`
+  `Network`
+
+Controls:
+
+- top bar widgets enabled toggle
+- disabled placeholders for per-widget toggles
+- disabled placeholder for refresh rate
+- `Reset Top Bar Widgets`
+- `Restart Top Bar Widgets`
+
+Current implementation:
+
+- enable/disable is tied to the current Quickshell autostart layer
+- restart/reset uses the existing shell launcher path
+- per-widget toggles and refresh-rate tuning are not connected yet
+
+Support level:
+
+- `Limited`
+
+### Browser Defaults
+
+Purpose:
+
+- choose the default browser
+- install supported browsers
+- apply the KeskOS browser homepage/theme layer
+
+Supported browsers:
+
+- `LibreWolf`
+- `Brave`
+- `Zen Browser`
+- `Firefox`
+
+Current implementation:
+
+- default browser uses `xdg-settings`, `xdg-mime`, and `mimeapps.list`
+- install launches `pkexec pacman -S --needed --noconfirm <package>`
+- browser theme/homepage apply uses the current KeskOS browser assets
+- homepage settings button opens the selected browser’s internal homepage settings when available
+
+Behavior notes:
+
+- installs require confirmation
+- a missing browser does not break the page
+- unavailable packages are reported clearly
+- homepage apply is disabled if homepage assets are missing
+
+Support level:
+
+- `Limited`
+
+### Boot Splash
+
+Purpose:
+
+- expose boot splash status without pretending Plymouth support is finished
+
+Current rule:
+
+- Plymouth is not integrated yet
+
+Status shown:
+
+- `Under works`
+- Plymouth installed: yes/no
+- KeskOS Plymouth theme installed: yes/no
+- current boot splash: detected theme or unavailable
+
+Controls:
+
+- disabled `Preview`
+- disabled `Apply Boot Splash`
+- `Open Boot Splash Docs`
+
+Support level:
+
+- `Under Works`
+
+### KeskOS Version
+
+Purpose:
+
+- show read-only KeskOS build and system information
+
+Typical fields:
+
+- KeskOS version
+- build layer
+- ISO build date when available
+- Git commit/build ID when available
+- update channel
+- base system
+- kernel
+- Plasma
+- KDE Frameworks
+- Qt
+- graphics platform
+- CPU
+- GPU
+- RAM
+- disk
+
+Links:
+
+- `https://keskos.org`
+- `https://docs.keskos.org`
+- `https://github.com/memegeko/keskos`
+
+Support level:
+
+- `Native`
+
+## Search Behavior
+
+KeskOS custom KCM metadata is set up so these queries resolve to the right pages:
+
+- `docs` and `help` find `Help`
+- `website` and `github` find `About This System` and `KeskOS Version`
+- `orange` and `kde defaults` find `KeskOS Theme`
+- `launcher` finds `Panels & Launcher`
+- `top bar`, `media`, `cpu`, `memory`, and `network` find `Top Bar Widgets`
+- `browser`, `librewolf`, `brave`, `zen`, and `firefox` find `Browser Defaults`
+- `boot splash` and `plymouth` find `Boot Splash`
+- `version` and `build` find `KeskOS Version`
+
+Removed from the normal user-facing search path:
+
+- `User Feedback`
+- the old `Experimental Features` idea
+
+## What Is Native vs Limited
+
+Native:
+
+- `Help`
+- `About This System`
+- `KeskOS Version`
+
+Limited:
+
+- `KeskOS Theme`
+- `Panels & Launcher`
+- `Top Bar Widgets`
+- `Browser Defaults`
+
+Under Works:
+
+- `Boot Splash`
 
 ## Testing
 
-Use this checklist after building or booting the image:
-
-1. Launch the real app directly:
+Basic checks:
 
 ```bash
 systemsettings
-```
-
-2. Reapply the theme stack:
-
-```bash
 kesk-apply-theme
-```
-
-3. Inspect the current theme state:
-
-```bash
 kesk-theme-status
-```
-
-4. Launch the branded menu entry:
-
-- open `Kesk Settings` from the KDE launcher
-
-5. Confirm the launched window is the real KDE System Settings app, not the old custom PySide settings shell.
-
-6. Confirm common KDE modules still load:
-
-- display
-- sound
-- networking
-- accessibility
-- default applications
-- file associations
-
-7. Inspect available KCMs:
-
-```bash
 kcmshell6 --list
 ```
 
-8. Reapply the KDE color scheme directly if you need to debug overrides:
-
-```bash
-plasma-apply-colorscheme KeskOSDark
-```
-
-9. Test representative modules:
+Useful module checks:
 
 ```bash
 kcmshell6 kcm_kscreen
@@ -297,51 +424,21 @@ kcmshell6 kcm_pulseaudio
 kcmshell6 kcm_access
 ```
 
-10. Confirm the visual result:
+What to confirm:
 
-- near-black background
-- dark sidebar
-- orange selected sidebar item
-- orange hover/selection accents
-- darker, sharper buttons, combo boxes, and text fields
-- readable text and controls
-- no major Breeze blue accent remains
-- no custom dashboard opens
-- no light theme pages appear by default
-- real KCM pages still open normally
-
-If it still looks too default, check:
-
-- `kesk-theme-status`
-- `kreadconfig6 --file ~/.config/kdeglobals --group General --key ColorScheme`
-- `kreadconfig6 --file ~/.config/kdeglobals --group General --key AccentColor`
-- `kreadconfig6 --file ~/.config/kdeglobals --group KDE --key widgetStyle`
-- whether `Kvantum installed` is `yes`
-- whether `current Kvantum theme` resolves to `KeskOS`
-- whether the app was already running and needs a full restart
-- whether the user already has older KDE config overriding the new defaults
-
-Existing users coming from older KeskOS or Plasma theme setups should rerun `kesk-apply-theme`.
-The script now strips stale inline KDE color overrides from `~/.config/kdeglobals` before reapplying `KeskOSDark`, which helps the inner System Settings UI stop falling back toward a half-Breeze look.
+1. `Kesk Settings` still launches the real KDE System Settings app.
+2. `User Feedback` is gone from the visible sidebar/search flow.
+3. The visible `About This System` page is the KeskOS-owned page with Website, Docs, and GitHub buttons.
+4. `Help` opens `https://docs.keskos.org`.
+5. The `KeskOS` category exists and contains:
+   `KeskOS Theme`, `Panels & Launcher`, `Top Bar Widgets`, `Browser Defaults`, `Boot Splash`, `KeskOS Version`
+6. The theme stays dark/orange with the sharp KeskOS styling.
+7. Unsupported controls are disabled instead of silently doing nothing.
 
 ## Known Limitations
 
-- Modern System Settings pages use KDE Kirigami/QML, so layout and component structure are still fundamentally KDE even after strong recoloring and widget styling.
-- Kvantum improves Qt Widgets and many embedded controls, but it does not fully restyle every Kirigami/QML component inside System Settings.
-- Some upstream KDE pages may still show isolated upstream iconography or minor accent remnants until deeper Plasma theming work is done.
-- Because stability matters more than extreme styling, Breeze remains the safe fallback whenever Kvantum is absent or not intended.
-- Exact KCM names depend on the installed distro package set.
-- This phase does not add native KeskOS pages inside System Settings yet.
-
-## Future Custom KCM Modules
-
-These are future ideas only and are not implemented in this task:
-
-- KeskOS Theme
-- Panels & Launcher
-- HUD / Widgets
-- Browser Defaults
-- Dunst Notifications
-- Boot Splash
-
-When those arrive, they should be real KCM plugins loaded by KDE System Settings rather than a separate replacement control-center app.
+- The app layout is still KDE System Settings. KeskOS customizes appearance and adds selected custom KCMs, but it does not replace the real KDE settings structure.
+- KDE defaults switching currently restores a safe Breeze Dark-style stack rather than every possible stock Plasma preference on every system.
+- Top Bar Widgets does not yet expose live per-widget enable/disable or refresh-rate tuning.
+- Boot Splash is status-only for now because Plymouth integration has not been added yet.
+- Browser theme/reset support is implemented for the supported browsers, but exact profile state still depends on whether the user has launched that browser before.

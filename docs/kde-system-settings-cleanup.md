@@ -109,6 +109,8 @@ Because KeskOS uses KDE's official restriction mechanism, the backup is of the m
 - `kcmshell6 --list` may still list modules that are hidden from the normal System Settings UI.
 - Direct module launching with `kcmshell6 <module-id>` is intentionally preserved.
 - Core desktop settings such as Display, Sound, Firewall, Accessibility, Login Screen, Users, Power, and About This System remain visible by default.
+- `User Feedback` is hidden by default.
+- The stock KDE `About This System` KCM is hidden by default and replaced in the visible UI by the KeskOS-owned `About This System` page.
 - Mobile-only, debug/info, server/niche, and duplicate-feeling modules are the main targets for hiding.
 
 ## Restore Example

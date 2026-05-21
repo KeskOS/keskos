@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Description": "KeskOS boot splash support is under development.",
+        "FormFactors": [
+            "desktop"
+        ],
+        "Icon": "preferences-system-boot",
+        "Name": "Boot Splash"
+    },
+    "X-KDE-Keywords": "boot splash,plymouth,boot theme,startup splash",
+    "X-KDE-System-Settings-Parent-Category": "keskos",
+    "X-KDE-Weight": 50
+}

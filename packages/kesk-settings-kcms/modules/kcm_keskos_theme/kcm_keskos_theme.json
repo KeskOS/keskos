@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Description": "Control the KeskOS visual style and switch back to KDE defaults.",
+        "FormFactors": [
+            "desktop"
+        ],
+        "Icon": "preferences-desktop-theme-global",
+        "Name": "KeskOS Theme"
+    },
+    "X-KDE-Keywords": "keskos theme,orange,accent,kde defaults,colors,kvantum,plasma style",
+    "X-KDE-System-Settings-Parent-Category": "keskos",
+    "X-KDE-Weight": 10
+}
