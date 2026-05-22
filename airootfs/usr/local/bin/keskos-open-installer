@@ -10,6 +10,23 @@ CALAMARES_MODULES=(
   /etc/calamares/modules/bootloader.conf
   /etc/calamares/modules/postinstall.conf
 )
+REPORT_HELPER="/usr/lib/kesk/install_report.py"
+
+send_failure_report() {
+  local status="$1"
+
+  if [[ ! -r "$REPORT_HELPER" ]]; then
+    return 0
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    KESK_INSTALL_REPORT_LOG_FILE="${LOG_DIR}/install-report.log" \
+      python3 "$REPORT_HELPER" send-installer-failure --status "$status" --log-file "$LOG_FILE" >/dev/null 2>&1 || true
+  elif command -v python >/dev/null 2>&1; then
+    KESK_INSTALL_REPORT_LOG_FILE="${LOG_DIR}/install-report.log" \
+      python "$REPORT_HELPER" send-installer-failure --status "$status" --log-file "$LOG_FILE" >/dev/null 2>&1 || true
+  fi
+}
 
 open_log_viewer() {
   local message="$1"
@@ -111,6 +128,7 @@ run_installer() {
   {
     printf '\n=== Calamares exited with status %s ===\n' "$status"
   } >>"$LOG_FILE"
+  send_failure_report "$status"
   show_failure_dialog "$status"
   return "$status"
 }

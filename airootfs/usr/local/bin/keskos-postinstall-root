@@ -54,6 +54,44 @@ apply_install_choices() {
   fi
 }
 
+record_install_report_source() {
+  local helper="/usr/lib/kesk/install_report.py"
+
+  if [[ ! -r "$helper" ]]; then
+    log "Install report helper is unavailable; skipping install report source generation."
+    return 0
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    KESK_INSTALL_REPORT_LOG_FILE="/var/log/keskos-install-report.log" \
+      python3 "$helper" write-source --target-root / >/dev/null 2>&1 || true
+  elif command -v python >/dev/null 2>&1; then
+    KESK_INSTALL_REPORT_LOG_FILE="/var/log/keskos-install-report.log" \
+      python "$helper" write-source --target-root / >/dev/null 2>&1 || true
+  else
+    log "Python runtime is unavailable; skipping install report source generation."
+  fi
+}
+
+send_install_report_success() {
+  local helper="/usr/lib/kesk/install_report.py"
+
+  if [[ ! -r "$helper" ]]; then
+    log "Install report helper is unavailable; skipping install report send."
+    return 0
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    KESK_INSTALL_REPORT_LOG_FILE="/var/log/keskos-install-report.log" \
+      python3 "$helper" send-installer-success --target-root / >/dev/null 2>&1 || true
+  elif command -v python >/dev/null 2>&1; then
+    KESK_INSTALL_REPORT_LOG_FILE="/var/log/keskos-install-report.log" \
+      python "$helper" send-installer-success --target-root / >/dev/null 2>&1 || true
+  else
+    log "Python runtime is unavailable; skipping install report send."
+  fi
+}
+
 write_sddm_login_defaults() {
   local target_user="$1"
   local theme_conf="/usr/share/sddm/themes/keskos/theme.conf"
@@ -94,13 +132,63 @@ detect_target_user() {
   ' /etc/passwd
 }
 
+read_install_session_value() {
+  local key="$1"
+  local session_file="/var/lib/keskos/install-session.json"
+
+  [[ -r "$session_file" ]] || return 0
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$session_file" "$key" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+key = sys.argv[2]
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except (FileNotFoundError, json.JSONDecodeError):
+    raise SystemExit(0)
+value = payload.get(key)
+if value is None:
+    raise SystemExit(0)
+print(str(value).strip())
+PY
+  elif command -v python >/dev/null 2>&1; then
+    python - "$session_file" "$key" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+key = sys.argv[2]
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except (FileNotFoundError, json.JSONDecodeError):
+    raise SystemExit(0)
+value = payload.get(key)
+if value is None:
+    raise SystemExit(0)
+print(str(value).strip())
+PY
+  fi
+}
+
 write_installed_os_release() {
-  cat >/etc/os-release <<'EOF'
+  local build_id=""
+
+  build_id="$(read_install_session_value iso_build_id || true)"
+  [[ -n "$build_id" ]] || build_id="rolling"
+
+  cat >/etc/os-release <<EOF
 NAME="KeskOS"
 PRETTY_NAME="KeskOS"
+VERSION_ID="${build_id}"
 ID=arch
 ID_LIKE=arch
-BUILD_ID=rolling
+BUILD_ID="${build_id}"
+IMAGE_BUILD_DATE="${build_id}"
 ANSI_COLOR="38;2;206;106;53"
 HOME_URL="https://github.com/memegeko/keskos"
 DOCUMENTATION_URL="https://github.com/memegeko/keskos"
@@ -123,6 +211,22 @@ apply_kcm_cleanup_defaults() {
     install -d -m 0755 /usr/share/kesk/settings
     kcmshell5 --list >/usr/share/kesk/settings/kcm-default-list.txt 2>/dev/null || true
   fi
+}
+
+ensure_kesk_command_permissions() {
+  local command_path=""
+
+  for command_path in \
+    /usr/bin/kesk \
+    /usr/lib/kesk/commands/upgrade \
+    /usr/lib/kesk/commands/doctor \
+    /usr/lib/kesk/commands/repair \
+    /usr/lib/kesk/commands/settings \
+    /usr/lib/kesk/commands/welcome
+  do
+    [[ -f "$command_path" ]] || continue
+    chmod 0755 "$command_path" || true
+  done
 }
 
 cleanup_live_bits() {
@@ -169,10 +273,15 @@ main() {
   write_installed_os_release
   write_installed_pacman_conf
   cleanup_live_bits
+  ensure_kesk_command_permissions
   apply_kcm_cleanup_defaults
   target_user="$(detect_target_user || true)"
   log "Applying Calamares software loadout choices."
   apply_install_choices "$target_user"
+  log "Recording install report source data."
+  record_install_report_source
+  log "Sending install report for successful install."
+  send_install_report_success
   if [[ -n "$target_user" ]]; then
     write_sddm_login_defaults "$target_user"
     log "Configuring installed user defaults for ${target_user}"

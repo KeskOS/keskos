@@ -69,6 +69,10 @@ if [[ -f /usr/lib/kesk/commands/settings ]]; then
   chmod 0755 /usr/lib/kesk/commands/settings
 fi
 
+if [[ -f /usr/lib/kesk/commands/welcome ]]; then
+  chmod 0755 /usr/lib/kesk/commands/welcome
+fi
+
 if [[ -f /home/liveuser/Desktop/Install\ KeskOS.desktop ]]; then
   chmod +x /home/liveuser/Desktop/Install\ KeskOS.desktop
 fi

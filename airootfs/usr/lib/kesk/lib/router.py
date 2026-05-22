@@ -16,6 +16,8 @@ HELP_ROWS = (
     ("kesk doctor", "Check system health."),
     ("kesk repair", "Repair KeskOS desktop and theme stack."),
     ("kesk settings", "Open KDE System Settings with KeskOS branding."),
+    ("kesk welcome", "Open Kesk Welcome manually."),
+    ("kesk welcome-rerun", "Open Kesk Welcome even when the first-run marker exists."),
 )
 
 
@@ -37,7 +39,7 @@ def show_version(console: KeskConsole) -> int:
 
 
 def exec_command(command_path: Path, extra_args: Sequence[str]) -> int:
-    if os.name == "nt":
+    if os.name == "nt" or not os.access(command_path, os.X_OK):
         return subprocess.call([sys.executable, str(command_path), *extra_args])
     os.execv(str(command_path), [str(command_path), *extra_args])
     return 1
@@ -49,6 +51,7 @@ def main(args: Sequence[str], root: Path) -> int:
     doctor_path = root / "commands" / "doctor"
     repair_path = root / "commands" / "repair"
     settings_path = root / "commands" / "settings"
+    welcome_path = root / "commands" / "welcome"
 
     if not args:
         return show_help(console)
@@ -65,6 +68,8 @@ def main(args: Sequence[str], root: Path) -> int:
             return exec_command(repair_path, ["--help"])
         if extra_args and extra_args[0] == "settings" and settings_path.exists():
             return exec_command(settings_path, ["--help"])
+        if extra_args and extra_args[0] == "welcome" and welcome_path.exists():
+            return exec_command(welcome_path, ["--help"])
         return show_help(console)
 
     if command in {"version", "--version", "-V"}:
@@ -89,5 +94,15 @@ def main(args: Sequence[str], root: Path) -> int:
         if not settings_path.exists():
             return show_help(console, "settings command is missing from /usr/lib/kesk/commands.")
         return exec_command(settings_path, extra_args)
+
+    if command == "welcome":
+        if not welcome_path.exists():
+            return show_help(console, "welcome command is missing from /usr/lib/kesk/commands.")
+        return exec_command(welcome_path, extra_args)
+
+    if command == "welcome-rerun":
+        if not welcome_path.exists():
+            return show_help(console, "welcome command is missing from /usr/lib/kesk/commands.")
+        return exec_command(welcome_path, ["--rerun", *extra_args])
 
     return show_help(console, f"unknown command: {command}")

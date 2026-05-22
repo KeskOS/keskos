@@ -2,6 +2,12 @@
 
 This setup console is now a fallback/debug tool only.
 
+The current supported first-boot app is `Kesk Welcome`.
+
+See:
+
+- `docs/kesk-welcome.md`
+
 The default KeskOS install path has moved into Calamares:
 
 - browser choice
@@ -14,7 +20,7 @@ See:
 
 - `docs/calamares-keskos-installer.md`
 
-`KeskOS Setup Console` is the mandatory first-login setup flow shipped with the installed KeskOS system.
+`KeskOS Setup Console` is no longer the primary first-login app shipped for KeskOS. `Kesk Welcome` now owns the normal first-boot flow.
 
 It launches after the first real user login, walks through browser selection and optional package installs, then writes the completion marker at:
 

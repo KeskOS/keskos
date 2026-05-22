@@ -10,6 +10,9 @@ ARCHISO_WORK_DIR="${WORK_ROOT}/archiso"
 LOCAL_REPO_DIR="${WORK_ROOT}/localrepo/x86_64"
 GENERATED_PACMAN_CONF="${WORK_ROOT}/pacman.conf"
 GENERATED_MIRRORLIST="${WORK_ROOT}/mirrorlist"
+LOCAL_BUILD_PACMAN_CONF="${WORK_ROOT}/local-build-pacman.conf"
+LOCAL_BUILD_MIRRORLIST="${WORK_ROOT}/local-build-mirrorlist"
+LOCAL_BUILD_PACMAN_WRAPPER="${WORK_ROOT}/local-build-pacman"
 PACMAN_SYNC_DB_PATH="${WORK_ROOT}/pacman-sync-db"
 PACMAN_SYNC_CACHE_DIR="${WORK_ROOT}/pacman-sync-cache"
 AUR_BUILD_ROOT="${SAFE_BUILD_ROOT}/aur"
@@ -19,7 +22,7 @@ GNUPG_BUILD_HOME="${SAFE_BUILD_ROOT}/gnupg"
 SOURCE_DATE="${SOURCE_DATE_EPOCH:-$(date +%s)}"
 ISO_VERSION="${KESKOS_ISO_VERSION:-$(date --date="@${SOURCE_DATE}" +%Y.%m.%d)}"
 REPO_PACKAGES=(systemsettings)
-LOCAL_PACKAGES=(kesk-settings-kcms)
+LOCAL_PACKAGES=(kesk-settings-kcms kesk-welcome)
 AUR_PACKAGES=(calamares librewolf-bin zen-browser-bin brave-bin)
 SKIP_PGP_FALLBACK_PACKAGES=(librewolf-bin zen-browser-bin brave-bin)
 
@@ -404,21 +407,36 @@ PY
 build_local_package() {
   local package_name="$1"
   local source_dir="${REPO_ROOT}/packages/${package_name}"
+  local app_source_dir="${REPO_ROOT}/apps/${package_name}"
   local build_dir="${SAFE_BUILD_ROOT}/local-packages/${package_name}"
+  local -a makepkg_env=()
 
   [[ -f "${source_dir}/PKGBUILD" ]] || fail "Local package source was not found: ${source_dir}"
 
   rm -rf "$build_dir"
   mkdir -p "$(dirname "$build_dir")"
   cp -a "$source_dir" "$build_dir"
+  if [[ -d "$app_source_dir" ]]; then
+    cp -a "$app_source_dir" "${build_dir}/app"
+    rm -rf "${build_dir}/app/target"
+  fi
+
+  if local_repo_has_built_local_package; then
+    refresh_local_repo
+    generate_local_build_pacman_conf
+    sync_local_build_repo
+    makepkg_env+=("PACMAN=${LOCAL_BUILD_PACMAN_WRAPPER}")
+  fi
 
   log "Building local package ${package_name}..."
   (
     cd "$build_dir"
-    PKGDEST="${AUR_PKGDEST}" makepkg --syncdeps --needed --noconfirm --cleanbuild --clean
+    env PKGDEST="${AUR_PKGDEST}" "${makepkg_env[@]}" \
+      makepkg --syncdeps --needed --noconfirm --cleanbuild --clean --rmdeps
   )
 
   find "$AUR_PKGDEST" -maxdepth 1 -type f -name "${package_name}-*.pkg.tar.*" -exec cp -f {} "$LOCAL_REPO_DIR/" \;
+  refresh_local_repo
 }
 
 refresh_local_repo() {
@@ -427,17 +445,30 @@ refresh_local_repo() {
   repo-add "${LOCAL_REPO_DIR}/keskos-local.db.tar.gz" "${LOCAL_REPO_DIR}"/*.pkg.tar.*
 }
 
-generate_pacman_conf() {
+local_repo_has_built_local_package() {
+  local package_name=""
+
+  for package_name in "${LOCAL_PACKAGES[@]}"; do
+    if compgen -G "${LOCAL_REPO_DIR}/${package_name}-*.pkg.tar.*" >/dev/null; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+write_generated_pacman_conf() {
+  local output_path="$1"
+  local mirrorlist_output="$2"
   local local_repo_uri=""
   local mirrorlist_source="${KESKOS_OVERRIDE_MIRRORLIST:-/etc/pacman.d/mirrorlist}"
-  log "Generating a pacman.conf that points at the local Calamares repository..."
 
   [[ -f "$mirrorlist_source" ]] || fail "Pacman mirrorlist source was not found: ${mirrorlist_source}"
   grep -Eq '^[[:space:]]*Server[[:space:]]*=' "$mirrorlist_source" || fail "Pacman mirrorlist source has no usable Server entries: ${mirrorlist_source}"
 
-  install -m 644 "$mirrorlist_source" "${GENERATED_MIRRORLIST}"
+  install -m 644 "$mirrorlist_source" "${mirrorlist_output}"
   local_repo_uri="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve().as_uri())' "${LOCAL_REPO_DIR}")"
-  python3 - "${REPO_ROOT}/pacman.conf" "${GENERATED_PACMAN_CONF}" "${local_repo_uri}" "${GENERATED_MIRRORLIST}" <<'PY'
+  python3 - "${REPO_ROOT}/pacman.conf" "${output_path}" "${local_repo_uri}" "${mirrorlist_output}" <<'PY'
 from pathlib import Path
 import sys
 
@@ -451,6 +482,29 @@ text = text.replace("__KESKOS_LOCAL_REPO_URI__", local_repo_uri)
 text = text.replace("/etc/pacman.d/mirrorlist", mirrorlist_path)
 output_path.write_text(text, encoding="utf-8")
 PY
+}
+
+generate_local_build_pacman_conf() {
+  log "Generating a pacman.conf for local package dependency resolution..."
+  write_generated_pacman_conf "${LOCAL_BUILD_PACMAN_CONF}" "${LOCAL_BUILD_MIRRORLIST}"
+  cat >"${LOCAL_BUILD_PACMAN_WRAPPER}" <<EOF
+#!/usr/bin/env bash
+exec /usr/bin/pacman --config "${LOCAL_BUILD_PACMAN_CONF}" "\$@"
+EOF
+  chmod +x "${LOCAL_BUILD_PACMAN_WRAPPER}"
+}
+
+sync_local_build_repo() {
+  local -a sudo_env=()
+
+  build_sudo_env sudo_env
+  log "Syncing local package dependency repositories..."
+  sudo env "${sudo_env[@]}" "${LOCAL_BUILD_PACMAN_WRAPPER}" -Sy --noconfirm
+}
+
+generate_pacman_conf() {
+  log "Generating a pacman.conf that points at the local Calamares repository..."
+  write_generated_pacman_conf "${GENERATED_PACMAN_CONF}" "${GENERATED_MIRRORLIST}"
 }
 
 preflight_repo_sync() {
@@ -490,6 +544,42 @@ stage_profile_basics() {
   cp -a "${REPO_ROOT}/efiboot" "${STAGE_DIR}/"
   install -m 644 "${REPO_ROOT}/profiledef.sh" "${STAGE_DIR}/profiledef.sh"
   install -m 644 "${REPO_ROOT}/packages.x86_64" "${STAGE_DIR}/packages.x86_64"
+
+  python3 - "${STAGE_DIR}/airootfs/etc/os-release" "${ISO_VERSION}" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+iso_version = sys.argv[2].strip() or "rolling"
+lines = []
+seen = set()
+
+for raw_line in path.read_text(encoding="utf-8").splitlines():
+    if raw_line.startswith("PRETTY_NAME="):
+        lines.append(f'PRETTY_NAME="KeskOS Live {iso_version}"')
+        seen.add("PRETTY_NAME")
+    elif raw_line.startswith("VERSION_ID="):
+        lines.append(f'VERSION_ID="{iso_version}"')
+        seen.add("VERSION_ID")
+    elif raw_line.startswith("BUILD_ID="):
+        lines.append(f'BUILD_ID="{iso_version}"')
+        seen.add("BUILD_ID")
+    elif raw_line.startswith("IMAGE_BUILD_DATE="):
+        lines.append(f'IMAGE_BUILD_DATE="{iso_version}"')
+        seen.add("IMAGE_BUILD_DATE")
+    else:
+        lines.append(raw_line)
+
+for key, value in (
+    ("VERSION_ID", iso_version),
+    ("BUILD_ID", iso_version),
+    ("IMAGE_BUILD_DATE", iso_version),
+):
+    if key not in seen:
+        lines.append(f'{key}="{value}"')
+
+path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
 }
 
 stage_source_tree() {
@@ -498,6 +588,10 @@ stage_source_tree() {
   mkdir -p "$source_root"
 
   cp -a "${REPO_ROOT}/assets" "$source_root/"
+  if [[ -d "${REPO_ROOT}/apps" ]]; then
+    cp -a "${REPO_ROOT}/apps" "$source_root/"
+    find "${source_root}/apps" -type d -name target -prune -exec rm -rf {} +
+  fi
   cp -a "${REPO_ROOT}/calamares" "$source_root/"
   cp -a "${REPO_ROOT}/configs" "$source_root/"
   cp -a "${REPO_ROOT}/desktop" "$source_root/"

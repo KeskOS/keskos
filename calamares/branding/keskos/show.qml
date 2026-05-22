@@ -10,7 +10,7 @@ Presentation {
     property string stageText: "> Installer console online.\n> Waiting for partition and software-loadout stages to begin."
     property string summaryText: "> Live desktop: active\n> Installer backend: armed\n> Target root pipeline: ready"
     property string profileText: "- Filesystem: Arch defaults from Calamares\n- Bootloader: GRUB (EFI)\n- Desktop: KDE Plasma + Quickshell HUD\n- Browser/profile: resolved during software loadout\n- Login target: finished desktop without forced first-run app"
-    property string notesText: "- Meta opens the KeskOS Launcher.\n- Software loadout choices are written into the target install.\n- Detailed installer output is written to ~/.cache/keskos/calamares-installer.log"
+    property string notesText: "- Meta opens the KeskOS Launcher.\n- Software loadout choices are written into the target install.\n- A sanitized install report is sent to api.keskos.org.\n- Detailed installer output is written to ~/.cache/keskos/calamares-installer.log"
     property var stageFrames: [
         "> Installer console online.\n> Waiting for partition and software-loadout stages to begin.",
         "> Pre-flight checks complete.\n> Locale, keyboard, and storage modules are standing by.",

@@ -13,6 +13,67 @@ target_path() {
   printf '%s%s\n' "${TARGET_ROOT%/}" "$relative_path"
 }
 
+write_install_session() {
+  local target_file
+  local live_file
+  local start_epoch
+  local start_utc
+  local iso_build_id
+  local iso_pretty_name
+  local install_mode
+  local boot_mode
+  local network_online
+
+  target_file="$(target_path /var/lib/keskos/install-session.json)"
+  live_file="/tmp/keskos-install-session.json"
+  install -d -m 0755 "$(dirname "$target_file")"
+  install -d -m 0755 "$(dirname "$live_file")"
+
+  start_epoch="$(date -u +%s)"
+  start_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  iso_build_id="$(awk -F= '/^BUILD_ID=/{gsub(/"/,"",$2); print $2; exit}' /etc/os-release 2>/dev/null || true)"
+  iso_pretty_name="$(awk -F= '/^PRETTY_NAME=/{sub(/^"/,"",$2); sub(/"$/,"",$2); print $2; exit}' /etc/os-release 2>/dev/null || true)"
+
+  install_mode="normal"
+
+  if [[ -d /sys/firmware/efi ]]; then
+    boot_mode="uefi"
+  else
+    boot_mode="bios"
+  fi
+
+  if command -v ping >/dev/null 2>&1; then
+    if ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
+      network_online="true"
+    else
+      network_online="false"
+    fi
+  else
+    network_online="unknown"
+  fi
+
+  python3 - "$target_file" "$live_file" "$start_epoch" "$start_utc" "$iso_build_id" "$iso_pretty_name" "$install_mode" "$boot_mode" "$network_online" <<'PY'
+import json
+import pathlib
+import sys
+
+target = pathlib.Path(sys.argv[1])
+live = pathlib.Path(sys.argv[2])
+network_raw = sys.argv[9].strip().lower()
+payload = {
+    "started_at_epoch": int(sys.argv[3]),
+    "started_at_utc": sys.argv[4],
+    "iso_build_id": sys.argv[5] or "unknown",
+    "iso_pretty_name": sys.argv[6] or "unknown",
+    "install_mode": sys.argv[7] or "normal",
+    "boot_mode": sys.argv[8] or "unknown",
+    "network_online_during_install": True if network_raw == "true" else False if network_raw == "false" else None,
+}
+target.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+live.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
 write_standard_linux_preset() {
   install -d -m 0755 "$(target_path /etc/mkinitcpio.d)"
   cat >"$(target_path /etc/mkinitcpio.d/linux.preset)" <<'EOF'
@@ -63,6 +124,7 @@ main() {
   rm -f "$(target_path /etc/mkinitcpio.conf.d/archiso.conf)"
   write_standard_linux_preset
   seed_kernel_image
+  write_install_session
 }
 
 main "$@"

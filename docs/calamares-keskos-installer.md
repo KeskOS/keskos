@@ -1,6 +1,6 @@
 # KeskOS Calamares Installer
 
-KeskOS now handles post-install personalization inside Calamares instead of forcing a welcome app on first login.
+KeskOS handles core post-install personalization inside Calamares, then hands off to `Kesk Welcome` for the first real user login flow.
 
 Flow:
 
@@ -72,7 +72,7 @@ Exec phase:
 4. `keskoschoices`
 5. `packages`
 6. services / bootloader
-7. postinstall shell hook
+7. postinstall shell hook, including install-report source generation and success send
 8. umount
 
 ## Software Loadout
@@ -153,9 +153,18 @@ Output files:
 
 - `/tmp/keskos-install-choices.json`
 - `/tmp/keskos-final-packages.txt`
+- `/tmp/keskos-install-session.json`
+- `/var/lib/keskos/install-session.json`
 - `/var/lib/keskos/install-choices.json`
+- `/var/lib/keskos/install-report-source.json`
 - `/var/lib/keskos/final-packages.txt`
 - `/var/log/keskos-install.log`
+
+Install reporting:
+
+- successful installs send a sanitized JSON report to `https://api.keskos.org/install-report`
+- failed installs send a sanitized failure report from the installer wrapper
+- the installer never sends directly to Discord
 
 ## Feature Flags
 

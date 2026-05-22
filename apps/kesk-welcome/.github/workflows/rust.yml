@@ -1,0 +1,75 @@
+name: Build
+
+on:
+  push:
+    paths-ignore:
+      - 'data/**'
+      - 'hooks/**'
+      - 'po/**'
+      - 'icons/**'
+      - 'LICENSE'
+      - '*.md'
+      - '*.sh'
+      - '*.desktop'
+      - '*.png'
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - develop
+
+env:
+  CARGO_TERM_COLOR: always
+  AR: llvm-ar
+  CC: clang
+  CXX: clang++
+  NM: llvm-nm
+  RANLIB: llvm-ranlib
+  RUSTFLAGS: '-Cembed-bitcode -Clinker=clang -Clink-arg=-fuse-ld=/usr/bin/ld.lld'
+
+jobs:
+  build:
+    name: CI
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install Packages
+        run: pacman -Syu meson git lld llvm clang pciutils gtk3 --noconfirm --needed
+
+      - uses: actions/checkout@v4
+
+      - name: Setup toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: rustfmt, clippy
+
+      - name: Configure
+        shell: bash
+        run: |
+          meson --buildtype=release --prefix=/usr build
+
+      - name: Run cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+
+      - name: Run cargo clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-targets -- -D warnings
+
+      - name: Run cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
