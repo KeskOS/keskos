@@ -145,7 +145,7 @@ This ISO line includes:
 
 ## Source and Legacy Branch
 
-The repo still keeps the old script installer work safely preserved.
+The repo keeps the old script installer work safely preserved.
 
 Branches:
 
