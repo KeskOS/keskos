@@ -10,8 +10,8 @@ use gtk::prelude::*;
 use gtk::{
     Align, Application, ApplicationWindow, Box as GtkBox, Button, CheckButton, ComboBoxText, CssProvider,
     Entry,
-    Frame, Grid, Label, MessageDialog, MessageType, Orientation, PolicyType, ResponseType,
-    ScrolledWindow, Separator, Stack, StyleContext,
+    Frame, Grid, Label, MessageDialog, MessageType, Orientation, PolicyType, ReliefStyle, ResponseType,
+    ScrolledWindow, Separator, Stack, StyleContext, StackTransitionType,
 };
 use logger::Logger;
 
@@ -22,9 +22,27 @@ use std::rc::Rc;
 use std::time::Duration;
 
 const APP_ID: &str = "org.keskos.welcome";
+const WINDOW_WIDTH: i32 = 1240;
+const WINDOW_HEIGHT: i32 = 740;
+const SIDEBAR_WIDTH: i32 = 280;
+const TITLEBAR_HEIGHT: i32 = 42;
+const HERO_HEIGHT: i32 = 108;
+const NAV_HEIGHT: i32 = 64;
+const STEP_ROW_HEIGHT: i32 = 46;
 const CSS: &str = r#"
+* {
+  background-image: none;
+  box-shadow: none;
+  text-shadow: none;
+  outline-color: transparent;
+  -gtk-icon-shadow: none;
+  -gtk-icon-transform: none;
+  transition: none;
+}
+
 window,
 box,
+grid,
 label,
 checkbutton,
 button,
@@ -33,51 +51,82 @@ combobox,
 textview,
 frame,
 viewport,
-scrolledwindow {
-  background-color: #050505;
+scrolledwindow,
+separator {
+  background-color: #030303;
   color: #b8afa6;
   font-family: "JetBrains Mono", "JetBrainsMono Nerd Font", "Iosevka", "Noto Sans Mono", monospace;
 }
 
 window {
-  background-color: #050505;
+  background-color: #030303;
 }
 
-frame.shell {
-  background-color: #050505;
+label {
+  background-color: transparent;
+  color: #b8afa6;
+}
+
+viewport,
+scrolledwindow,
+scrolledwindow viewport,
+scrolledwindow overshoot,
+scrolledwindow undershoot {
+  background-color: #030303;
+  border: none;
+}
+
+stack,
+box.page-shell,
+box.page-content,
+viewport.page-viewport,
+scrolledwindow.page-scroll {
+  background-color: #030303;
+  border: none;
+}
+
+frame.shell,
+frame.shell > border {
+  background-color: #030303;
   border: 1px solid rgba(206, 106, 53, 0.55);
 }
 
-frame.titlebar {
-  background-color: #040303;
+frame.titlebar,
+frame.titlebar > border {
+  background-color: #030303;
   border: none;
   border-bottom: 1px solid rgba(206, 106, 53, 0.45);
 }
 
-frame.rail {
-  background-color: #080706;
+frame.rail,
+frame.rail > border {
+  background-color: #050505;
   border: none;
   border-right: 1px solid rgba(206, 106, 53, 0.42);
 }
 
-frame.hero {
-  background-color: #040303;
+frame.hero,
+frame.hero > border {
+  background-color: #050505;
   border: 1px solid rgba(206, 106, 53, 0.45);
 }
 
-frame.content-shell {
-  background-color: #050505;
+frame.content-shell,
+frame.content-shell > border {
+  background-color: #030303;
   border: none;
 }
 
-frame.nav {
-  background-color: #080706;
+frame.nav,
+frame.nav > border {
+  background-color: #050505;
   border: none;
   border-top: 1px solid rgba(206, 106, 53, 0.45);
 }
 
-frame.section {
-  background-color: #080706;
+frame.section,
+frame.section > border {
+  background-color: #050505;
   border: 1px solid rgba(206, 106, 53, 0.38);
   padding: 0;
 }
@@ -90,7 +139,7 @@ label.strip-title {
 }
 
 label.hero-title {
-  color: #e8ddd4;
+  color: #e2d8cf;
   font-family: "VT323", "JetBrains Mono", "Iosevka", monospace;
   font-size: 30px;
   font-weight: 700;
@@ -121,7 +170,7 @@ label.panel-title {
 }
 
 label.section-title {
-  color: #ce6a35;
+  color: #e2d8cf;
   font-weight: 700;
   font-size: 14px;
 }
@@ -136,98 +185,245 @@ label.badge {
   font-weight: 700;
 }
 
+button,
+button label {
+  background-color: #050505;
+  color: #b8afa6;
+}
+
 button {
-  background-color: #0a0807;
-  color: #ce6a35;
-  border: 1px solid rgba(206, 106, 53, 0.55);
+  border: 1px solid rgba(206, 106, 53, 0.45);
   border-radius: 0;
   box-shadow: none;
   padding: 6px 14px;
 }
 
+button:hover,
+button:hover label {
+  color: #e2d8cf;
+}
+
 button:hover {
-  background-color: rgba(206, 106, 53, 0.16);
+  background-color: #2a160f;
   border-color: #ce6a35;
 }
 
 button:active,
-button:checked,
-button:focus {
-  background-color: rgba(206, 106, 53, 0.24);
+button:checked {
+  background-color: #341b11;
   border-color: #ce6a35;
+}
+
+button:focus {
+  background-color: #050505;
+  border-color: #ce6a35;
+  outline: none;
 }
 
 button:disabled {
-  color: #6f6760;
-  background-color: #080706;
-  border-color: rgba(111, 103, 96, 0.45);
+  color: #4f4a45;
+  background-color: #030303;
+  border-color: rgba(143, 138, 132, 0.25);
+}
+
+button.primary,
+button.primary label {
+  color: #e2d8cf;
 }
 
 button.primary {
-  background-color: rgba(206, 106, 53, 0.16);
-  color: #e8ddd4;
+  background-color: #2a160f;
   border-color: #ce6a35;
 }
 
+button.primary:hover {
+  background-color: #341b11;
+}
+
+button.primary:focus {
+  background-color: #2a160f;
+}
+
 button.step {
-  background-color: #080706;
+  background-color: #050505;
   color: #8f8a84;
-  border: none;
-  border-bottom: 1px solid rgba(206, 106, 53, 0.16);
+  border-top: 1px solid transparent;
+  border-right: 1px solid transparent;
+  border-bottom: 1px solid rgba(206, 106, 53, 0.18);
+  border-left: 3px solid transparent;
   border-radius: 0;
+  min-height: 40px;
   padding: 10px 14px;
 }
 
+button.step label {
+  color: #8f8a84;
+}
+
 button.step:hover {
-  background-color: rgba(206, 106, 53, 0.10);
-  color: #ce6a35;
+  background-color: rgba(206, 106, 53, 0.08);
+  border-top-color: rgba(206, 106, 53, 0.35);
+  border-right-color: rgba(206, 106, 53, 0.35);
+  border-bottom-color: rgba(206, 106, 53, 0.35);
+  border-left-color: rgba(206, 106, 53, 0.35);
+}
+
+button.step:hover label {
+  color: #b8afa6;
 }
 
 button.step-active {
-  background-color: rgba(206, 106, 53, 0.16);
-  color: #ce6a35;
+  background-color: #2a160f;
+  color: #e2d8cf;
   border-left: 3px solid #ce6a35;
-  border-bottom: 1px solid rgba(206, 106, 53, 0.25);
+  border-top: 1px solid #ce6a35;
+  border-right: 1px solid #ce6a35;
+  border-bottom: 1px solid #ce6a35;
+}
+
+button.step-active label {
+  color: #e2d8cf;
 }
 
 button.step-done {
   color: #b8afa6;
 }
 
+button.step-done label {
+  color: #b8afa6;
+}
+
+entry,
+entry selection,
 combobox,
 combobox box,
+combobox button,
+combobox button box,
+combobox button label,
+combobox cellview,
+combobox arrow,
+combobox menu,
+combobox menuitem,
 entry {
-  background-color: #080706;
+  background-color: #050505;
   color: #b8afa6;
   border-radius: 0;
-  border: 1px solid rgba(206, 106, 53, 0.5);
+  border: 1px solid rgba(206, 106, 53, 0.45);
   padding: 4px 10px;
 }
 
+entry selection {
+  background-color: #2a160f;
+  color: #e2d8cf;
+}
+
+combobox button:hover,
+combobox button:active,
+combobox button:focus,
+combobox button:checked,
 combobox:focus,
 entry:focus {
   border-color: #ce6a35;
 }
 
-checkbutton check {
-  background-color: #080706;
+combobox button:hover,
+combobox button:active,
+combobox button:checked {
+  background-color: #2a160f;
+  color: #e2d8cf;
+}
+
+combobox button:focus,
+combobox:focus,
+entry:focus {
+  background-color: #050505;
+  color: #b8afa6;
+}
+
+combobox arrow {
+  color: #ce6a35;
+}
+
+entry:disabled,
+combobox:disabled,
+combobox button:disabled,
+combobox box:disabled {
+  background-color: #030303;
+  color: #4f4a45;
+  border-color: rgba(143, 138, 132, 0.25);
+}
+
+menu,
+menuitem,
+popover,
+popover.background,
+modelbutton {
+  background-color: #050505;
+  color: #b8afa6;
   border-radius: 0;
-  border: 1px solid rgba(206, 106, 53, 0.5);
+}
+
+menuitem:hover,
+menuitem:selected,
+modelbutton:hover,
+modelbutton:checked,
+modelbutton:selected {
+  background-color: #2a160f;
+  color: #e2d8cf;
+}
+
+checkbutton,
+checkbutton label {
+  background-color: transparent;
+  color: #b8afa6;
+}
+
+checkbutton:hover label,
+checkbutton:focus label {
+  color: #e2d8cf;
+}
+
+checkbutton check {
+  min-width: 16px;
+  min-height: 16px;
+  background-color: #030303;
+  border-radius: 0;
+  border: 1px solid rgba(206, 106, 53, 0.55);
+  background-image: none;
+  box-shadow: none;
+  -gtk-icon-source: none;
 }
 
 checkbutton check:checked {
-  background-color: #ce6a35;
-  color: #050505;
+  background-color: #2a160f;
+  color: #e2d8cf;
+  border-color: #ce6a35;
+  -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
+}
+
+checkbutton check:hover {
+  background-color: rgba(206, 106, 53, 0.08);
+  border-color: #ce6a35;
+}
+
+checkbutton:disabled,
+checkbutton:disabled label,
+checkbutton:disabled check {
+  color: #4f4a45;
+  background-color: #030303;
+  border-color: rgba(143, 138, 132, 0.25);
 }
 
 scrollbar,
+scrollbar trough,
 scrollbar slider {
-  background-color: #080706;
+  background-color: #050505;
   border-radius: 0;
 }
 
 scrollbar slider {
   background-color: rgba(206, 106, 53, 0.45);
+  border: 1px solid rgba(206, 106, 53, 0.45);
 }
 
 scrollbar slider:hover {
@@ -433,9 +629,10 @@ impl WelcomeApp {
         let window = ApplicationWindow::builder()
             .application(application)
             .title("Kesk Welcome")
-            .default_width(1280)
-            .default_height(820)
+            .default_width(WINDOW_WIDTH)
+            .default_height(WINDOW_HEIGHT)
             .build();
+        window.set_size_request(WINDOW_WIDTH, WINDOW_HEIGHT);
 
         let shell_frame = panel_frame("shell");
         window.add(&shell_frame);
@@ -444,27 +641,29 @@ impl WelcomeApp {
         shell_frame.add(&root);
 
         let strip_frame = panel_frame("titlebar");
+        strip_frame.set_size_request(-1, TITLEBAR_HEIGHT);
         let strip_box = GtkBox::new(Orientation::Horizontal, 0);
         strip_box.set_margin_top(6);
         strip_box.set_margin_bottom(6);
-        strip_box.set_margin_start(12);
-        strip_box.set_margin_end(12);
+        strip_box.set_margin_start(10);
+        strip_box.set_margin_end(10);
         strip_box.add(&label("[ KESKOS DEPLOYMENT CONSOLE ]", "strip-title"));
         strip_frame.add(&strip_box);
         root.pack_start(&strip_frame, false, false, 0);
 
         let body = GtkBox::new(Orientation::Horizontal, 0);
+        body.set_vexpand(true);
         root.pack_start(&body, true, true, 0);
 
         let sidebar_frame = panel_frame("rail");
-        sidebar_frame.set_size_request(250, -1);
+        sidebar_frame.set_size_request(SIDEBAR_WIDTH, -1);
         let sidebar_box = GtkBox::new(Orientation::Vertical, 0);
 
         let rail_brand = GtkBox::new(Orientation::Vertical, 4);
-        rail_brand.set_margin_top(16);
-        rail_brand.set_margin_bottom(14);
-        rail_brand.set_margin_start(14);
-        rail_brand.set_margin_end(14);
+        rail_brand.set_margin_top(14);
+        rail_brand.set_margin_bottom(12);
+        rail_brand.set_margin_start(12);
+        rail_brand.set_margin_end(12);
         rail_brand.add(&label("K E S K   O S", "rail-brand-title"));
         rail_brand.add(&label("FIRST BOOT SEQUENCE", "rail-brand-meta"));
         rail_brand.add(&label("S.P.L.I.T. EDITION", "rail-brand-meta"));
@@ -476,6 +675,8 @@ impl WelcomeApp {
             let button = Button::with_label(spec.sidebar);
             button.set_halign(Align::Fill);
             button.set_hexpand(true);
+            button.set_size_request(-1, STEP_ROW_HEIGHT);
+            prepare_button(&button);
             align_button_label_start(&button);
             add_class(&button, "step");
             sidebar_box.pack_start(&button, false, false, 0);
@@ -488,15 +689,16 @@ impl WelcomeApp {
         body.pack_start(&content_column, true, true, 0);
 
         let header_frame = panel_frame("hero");
-        header_frame.set_margin_top(12);
+        header_frame.set_size_request(-1, HERO_HEIGHT);
+        header_frame.set_margin_top(10);
         header_frame.set_margin_bottom(0);
-        header_frame.set_margin_start(12);
-        header_frame.set_margin_end(12);
+        header_frame.set_margin_start(10);
+        header_frame.set_margin_end(10);
         let header_box = GtkBox::new(Orientation::Vertical, 6);
-        header_box.set_margin_top(16);
-        header_box.set_margin_bottom(16);
-        header_box.set_margin_start(16);
-        header_box.set_margin_end(16);
+        header_box.set_margin_top(14);
+        header_box.set_margin_bottom(14);
+        header_box.set_margin_start(14);
+        header_box.set_margin_end(14);
         let title_label = label(&hero_title_for_page(&PAGES[0]), "hero-title");
         let description_label = label(PAGES[0].description, "hero-subtitle");
         description_label.set_line_wrap(true);
@@ -506,10 +708,12 @@ impl WelcomeApp {
         content_column.pack_start(&header_frame, false, false, 0);
 
         let content_frame = panel_frame("content-shell");
-        content_frame.set_margin_top(12);
+        content_frame.set_hexpand(true);
+        content_frame.set_vexpand(true);
+        content_frame.set_margin_top(10);
         content_frame.set_margin_bottom(0);
-        content_frame.set_margin_start(12);
-        content_frame.set_margin_end(12);
+        content_frame.set_margin_start(10);
+        content_frame.set_margin_end(10);
         content_column.pack_start(&content_frame, true, true, 0);
         let content_box = GtkBox::new(Orientation::Vertical, 0);
         content_frame.add(&content_box);
@@ -517,6 +721,10 @@ impl WelcomeApp {
         let stack = Stack::new();
         stack.set_hexpand(true);
         stack.set_vexpand(true);
+        stack.set_hhomogeneous(true);
+        stack.set_vhomogeneous(true);
+        stack.set_transition_type(StackTransitionType::None);
+        stack.set_interpolate_size(false);
         content_box.pack_start(&stack, true, true, 0);
 
         let network = build_network_page(&stack);
@@ -529,11 +737,12 @@ impl WelcomeApp {
         build_links_page(&stack);
 
         let footer_frame = panel_frame("nav");
+        footer_frame.set_size_request(-1, NAV_HEIGHT);
         let footer_box = GtkBox::new(Orientation::Horizontal, 12);
-        footer_box.set_margin_top(10);
-        footer_box.set_margin_bottom(10);
-        footer_box.set_margin_start(14);
-        footer_box.set_margin_end(14);
+        footer_box.set_margin_top(8);
+        footer_box.set_margin_bottom(8);
+        footer_box.set_margin_start(12);
+        footer_box.set_margin_end(12);
         let footer_label = label("Waiting for first-boot choices.", "muted");
         footer_label.set_hexpand(true);
         footer_label.set_halign(Align::Start);
@@ -541,6 +750,9 @@ impl WelcomeApp {
         let back_button = Button::with_label("[ BACK ]");
         let skip_button = Button::with_label("[ SKIP ]");
         let continue_button = Button::with_label("[ CONTINUE ]");
+        prepare_button(&back_button);
+        prepare_button(&skip_button);
+        prepare_button(&continue_button);
         apply_primary(&continue_button);
         button_box.pack_start(&back_button, false, false, 0);
         button_box.pack_start(&skip_button, false, false, 0);
@@ -1797,7 +2009,8 @@ Links available: keskos.org, docs.keskos.org, github.com/memegeko/keskos, downlo
 
 fn build_welcome_page(stack: &Stack, cli: &Cli) {
     let content = page_box();
-    let top_row = GtkBox::new(Orientation::Horizontal, 12);
+    let top_row = GtkBox::new(Orientation::Horizontal, 10);
+    top_row.set_homogeneous(true);
 
     let (brand_frame, brand_panel) = titled_section("DEPLOY STATUS");
     brand_panel.add(&label("K E S K   O S", "rail-brand-title"));
@@ -1838,7 +2051,8 @@ fn build_welcome_page(stack: &Stack, cli: &Cli) {
 
 fn build_network_page(stack: &Stack) -> NetworkWidgets {
     let content = page_box();
-    let top_row = GtkBox::new(Orientation::Horizontal, 12);
+    let top_row = GtkBox::new(Orientation::Horizontal, 10);
+    top_row.set_homogeneous(true);
 
     let (status_frame, status_panel) = titled_section("UPLINK STATUS");
     let support_badge = label("Support badge: Limited", "badge");
@@ -1851,8 +2065,11 @@ fn build_network_page(stack: &Stack) -> NetworkWidgets {
     let backend_status = label("", "");
     backend_status.set_line_wrap(true);
     let active_connection = label("", "");
+    active_connection.set_line_wrap(true);
     let wired_status = label("", "");
+    wired_status.set_line_wrap(true);
     let wifi_status = label("", "");
+    wifi_status.set_line_wrap(true);
 
     status_panel.add(&support_badge);
     status_panel.add(&uplink_status);
@@ -1885,7 +2102,13 @@ fn build_network_page(stack: &Stack) -> NetworkWidgets {
     let scan_button = Button::with_label("[ SCAN NETWORKS ]");
     let connect_button = Button::with_label("[ CONNECT ]");
     let recheck_button = Button::with_label("[ RECHECK UPLINK ]");
+    prepare_button(&scan_button);
+    prepare_button(&connect_button);
+    prepare_button(&recheck_button);
     apply_primary(&connect_button);
+    scan_button.set_hexpand(true);
+    connect_button.set_hexpand(true);
+    recheck_button.set_hexpand(true);
     buttons.add(&scan_button);
     buttons.add(&connect_button);
     buttons.add(&recheck_button);
@@ -1924,7 +2147,8 @@ fn build_network_page(stack: &Stack) -> NetworkWidgets {
 
 fn build_browser_page(stack: &Stack) -> BrowserWidgets {
     let content = page_box();
-    let top_row = GtkBox::new(Orientation::Horizontal, 12);
+    let top_row = GtkBox::new(Orientation::Horizontal, 10);
+    top_row.set_homogeneous(true);
 
     let (profile_frame, profile_panel) = titled_section("BROWSER PROFILE");
     profile_panel.add(&label("LibreWolf is the recommended browser for KeskOS.", "muted"));
@@ -1955,11 +2179,17 @@ fn build_browser_page(stack: &Stack) -> BrowserWidgets {
     top_row.pack_start(&profile_frame, true, true, 0);
 
     let (actions_frame, actions_panel) = titled_section("ACTIONS");
-    let buttons = GtkBox::new(Orientation::Horizontal, 8);
+    let buttons = GtkBox::new(Orientation::Vertical, 8);
     let install_button = Button::with_label("[ INSTALL SELECTED BROWSER ]");
     let default_button = Button::with_label("[ SET AS DEFAULT BROWSER ]");
     let theme_button = Button::with_label("[ APPLY KESKOS BROWSER THEME ]");
+    prepare_button(&install_button);
+    prepare_button(&default_button);
+    prepare_button(&theme_button);
     apply_primary(&install_button);
+    install_button.set_hexpand(true);
+    default_button.set_hexpand(true);
+    theme_button.set_hexpand(true);
     buttons.add(&install_button);
     buttons.add(&default_button);
     buttons.add(&theme_button);
@@ -1975,7 +2205,8 @@ fn build_browser_page(stack: &Stack) -> BrowserWidgets {
 
 fn build_topbar_page(stack: &Stack) -> TopBarWidgets {
     let content = page_box();
-    let top_row = GtkBox::new(Orientation::Horizontal, 12);
+    let top_row = GtkBox::new(Orientation::Horizontal, 10);
+    top_row.set_homogeneous(true);
 
     let (status_frame, status_panel) = titled_section("BACKEND STATUS");
     status_panel.add(&label("Support badge: Limited", "badge"));
@@ -2001,11 +2232,17 @@ fn build_topbar_page(stack: &Stack) -> TopBarWidgets {
     }
     control_panel.add(&grid);
 
-    let buttons = GtkBox::new(Orientation::Horizontal, 8);
+    let buttons = GtkBox::new(Orientation::Vertical, 8);
     let apply_button = Button::with_label("[ APPLY WIDGET CHOICES ]");
     let reset_button = Button::with_label("[ RESET TO ALL ON ]");
     let restart_button = Button::with_label("[ RESTART TOP BAR WIDGETS ]");
+    prepare_button(&apply_button);
+    prepare_button(&reset_button);
+    prepare_button(&restart_button);
     apply_primary(&apply_button);
+    apply_button.set_hexpand(true);
+    reset_button.set_hexpand(true);
+    restart_button.set_hexpand(true);
     buttons.add(&apply_button);
     buttons.add(&reset_button);
     buttons.add(&restart_button);
@@ -2046,7 +2283,8 @@ fn build_optional_apps_page(stack: &Stack) -> OptionalWidgets {
 
     let mut rows = Vec::new();
     for (left_group, right_group) in [("Gaming", "Creator"), ("Dev", "Utilities")] {
-        let row = GtkBox::new(Orientation::Horizontal, 12);
+        let row = GtkBox::new(Orientation::Horizontal, 10);
+        row.set_homogeneous(true);
 
         for group in [left_group, right_group] {
             let (frame, panel) = titled_section(group);
@@ -2077,6 +2315,7 @@ fn build_optional_apps_page(stack: &Stack) -> OptionalWidgets {
 
     let (action_frame, action_panel) = titled_section("PACKAGE ACTIONS");
     let install_button = Button::with_label("[ INSTALL SELECTED APPS ]");
+    prepare_button(&install_button);
     apply_primary(&install_button);
     action_panel.add(&install_button);
     action_panel.add(&label("> Docker is intentionally not part of this first-boot flow.", "muted"));
@@ -2089,7 +2328,8 @@ fn build_optional_apps_page(stack: &Stack) -> OptionalWidgets {
 
 fn build_theme_page(stack: &Stack) -> ThemeWidgets {
     let content = page_box();
-    let top_row = GtkBox::new(Orientation::Horizontal, 12);
+    let top_row = GtkBox::new(Orientation::Horizontal, 10);
+    top_row.set_homogeneous(true);
 
     let (status_frame, status_panel) = titled_section("DEPLOYMENT STATUS");
     status_panel.add(&label("Support badge: Limited", "badge"));
@@ -2132,6 +2372,12 @@ fn build_theme_page(stack: &Stack) -> ThemeWidgets {
     let reapply_panels = Button::with_label("[ REAPPLY PANEL LAYOUT ]");
     let reapply_konsole = Button::with_label("[ REAPPLY KONSOLE PROFILE ]");
     let reapply_dunst = Button::with_label("[ REAPPLY DUNST THEME ]");
+    prepare_button(&apply_kesk);
+    prepare_button(&reset_kde);
+    prepare_button(&reapply_launcher);
+    prepare_button(&reapply_panels);
+    prepare_button(&reapply_konsole);
+    prepare_button(&reapply_dunst);
     apply_primary(&apply_kesk);
     for (index, button) in [
         &apply_kesk,
@@ -2178,7 +2424,8 @@ fn build_theme_page(stack: &Stack) -> ThemeWidgets {
 
 fn build_links_page(stack: &Stack) {
     let content = page_box();
-    let row = GtkBox::new(Orientation::Horizontal, 12);
+    let row = GtkBox::new(Orientation::Horizontal, 10);
+    row.set_homogeneous(true);
 
     let (links_frame, links_panel) = titled_section("EXTERNAL LINKS");
     links_panel.add(&label("Use xdg-open for official KeskOS sites and project resources.", "muted"));
@@ -2189,6 +2436,7 @@ fn build_links_page(stack: &Stack) {
         ("downloads", "[ DOWNLOADS ]"),
     ] {
         let button = Button::with_label(title);
+        prepare_button(&button);
         button.set_widget_name(&format!("link-{name}"));
         links_panel.add(&button);
     }
@@ -2203,6 +2451,7 @@ fn build_links_page(stack: &Stack) {
         ("repair", "[ RUN KESK REPAIR ]"),
     ] {
         let button = Button::with_label(title);
+        prepare_button(&button);
         button.set_widget_name(&format!("tool-{name}"));
         tools_panel.add(&button);
     }
@@ -2215,7 +2464,8 @@ fn build_links_page(stack: &Stack) {
 
 fn build_finish_page(stack: &Stack) -> FinishWidgets {
     let content = page_box();
-    let row = GtkBox::new(Orientation::Horizontal, 12);
+    let row = GtkBox::new(Orientation::Horizontal, 10);
+    row.set_homogeneous(true);
 
     let (summary_frame, summary_panel) = titled_section("DEPLOYMENT SUMMARY");
     let summary = label("", "");
@@ -2224,7 +2474,7 @@ fn build_finish_page(stack: &Stack) -> FinishWidgets {
     summary_panel.add(&summary);
     row.pack_start(&summary_frame, true, true, 0);
 
-    let right_column = GtkBox::new(Orientation::Vertical, 12);
+    let right_column = GtkBox::new(Orientation::Vertical, 10);
 
     let (finish_frame, finish_panel) = titled_section("COMPLETION");
     finish_panel.add(&label("Finish writes the completion marker only when you press [ FINISH ].", "muted"));
@@ -2262,18 +2512,38 @@ fn build_finish_page(stack: &Stack) -> FinishWidgets {
 fn wrap_scrolled(content: GtkBox) -> ScrolledWindow {
     let scroll = ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
     scroll.set_policy(PolicyType::Automatic, PolicyType::Automatic);
+    scroll.set_hexpand(true);
+    scroll.set_vexpand(true);
+    add_class(&scroll, "page-scroll");
     let viewport = gtk::Viewport::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
-    viewport.add(&content);
+    viewport.set_hexpand(true);
+    viewport.set_vexpand(true);
+    add_class(&viewport, "page-viewport");
+    let shell = GtkBox::new(Orientation::Vertical, 0);
+    shell.set_hexpand(true);
+    shell.set_vexpand(true);
+    shell.set_halign(Align::Fill);
+    shell.set_valign(Align::Start);
+    add_class(&shell, "page-shell");
+    add_class(&content, "page-content");
+    content.set_hexpand(true);
+    content.set_vexpand(false);
+    shell.pack_start(&content, false, false, 0);
+    let spacer = GtkBox::new(Orientation::Vertical, 0);
+    spacer.set_hexpand(true);
+    spacer.set_vexpand(true);
+    shell.pack_start(&spacer, true, true, 0);
+    viewport.add(&shell);
     scroll.add(&viewport);
     scroll
 }
 
 fn page_box() -> GtkBox {
-    let content = GtkBox::new(Orientation::Vertical, 14);
-    content.set_margin_top(12);
-    content.set_margin_bottom(12);
-    content.set_margin_start(12);
-    content.set_margin_end(12);
+    let content = GtkBox::new(Orientation::Vertical, 12);
+    content.set_margin_top(10);
+    content.set_margin_bottom(10);
+    content.set_margin_start(10);
+    content.set_margin_end(10);
     content
 }
 
@@ -2305,11 +2575,11 @@ fn panel_separator() -> Separator {
 
 fn titled_section(title: &str) -> (Frame, GtkBox) {
     let frame = section_frame();
-    let panel = GtkBox::new(Orientation::Vertical, 10);
-    panel.set_margin_top(14);
-    panel.set_margin_bottom(14);
-    panel.set_margin_start(14);
-    panel.set_margin_end(14);
+    let panel = GtkBox::new(Orientation::Vertical, 8);
+    panel.set_margin_top(12);
+    panel.set_margin_bottom(12);
+    panel.set_margin_start(12);
+    panel.set_margin_end(12);
     if !title.is_empty() {
         panel.add(&label(title, "panel-title"));
         panel.add(&panel_separator());
@@ -2319,7 +2589,13 @@ fn titled_section(title: &str) -> (Frame, GtkBox) {
 }
 
 fn apply_primary(button: &Button) {
+    prepare_button(button);
     add_class(button, "primary");
+}
+
+fn prepare_button(button: &Button) {
+    button.set_relief(ReliefStyle::None);
+    button.set_can_default(false);
 }
 
 fn add_class<W: IsA<gtk::Widget>>(widget: &W, class_name: &str) {
@@ -2341,11 +2617,15 @@ fn align_button_label_start(button: &Button) {
     if let Some(child) = button.child() {
         if let Ok(label) = child.downcast::<Label>() {
             label.set_xalign(0.0);
+            label.set_line_wrap(true);
         }
     }
 }
 
 fn install_css(logger: &Logger) {
+    if let Some(settings) = gtk::Settings::default() {
+        let _ = settings.set_property("gtk-application-prefer-dark-theme", &true);
+    }
     let provider = CssProvider::new();
     if let Err(error) = provider.load_from_data(CSS.as_bytes()) {
         logger.log(&format!("css load warning: {error}"));
@@ -2354,7 +2634,7 @@ fn install_css(logger: &Logger) {
     StyleContext::add_provider_for_screen(
         &gtk::gdk::Screen::default().expect("screen"),
         &provider,
-        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        gtk::STYLE_PROVIDER_PRIORITY_USER,
     );
 }
 
