@@ -29,6 +29,11 @@ const TITLEBAR_HEIGHT: i32 = 42;
 const HERO_HEIGHT: i32 = 108;
 const NAV_HEIGHT: i32 = 64;
 const STEP_ROW_HEIGHT: i32 = 46;
+const CONTENT_OUTER_MARGIN: i32 = 10;
+const HERO_INSET: i32 = 14;
+const PANEL_INSET: i32 = 12;
+const PAGE_SECTION_SPACING: i32 = 12;
+const PANEL_SECTION_SPACING: i32 = 8;
 const CSS: &str = r#"
 * {
   background-image: none;
@@ -252,8 +257,8 @@ button.step {
   border-bottom: 1px solid rgba(206, 106, 53, 0.18);
   border-left: 3px solid transparent;
   border-radius: 0;
-  min-height: 40px;
-  padding: 10px 14px;
+  min-height: 46px;
+  padding: 0 14px;
 }
 
 button.step label {
@@ -591,6 +596,26 @@ struct FinishWidgets {
     report_extra: CheckButton,
 }
 
+struct StepRailWidgets {
+    frame: Frame,
+    buttons: Vec<Button>,
+}
+
+struct PageHostWidgets {
+    column: GtkBox,
+    title_label: Label,
+    description_label: Label,
+    stack: Stack,
+}
+
+struct BottomNavWidgets {
+    frame: Frame,
+    status_label: Label,
+    back_button: Button,
+    skip_button: Button,
+    continue_button: Button,
+}
+
 struct WelcomeApp {
     cli: Cli,
     logger: Logger,
@@ -638,129 +663,43 @@ impl WelcomeApp {
         window.add(&shell_frame);
 
         let root = GtkBox::new(Orientation::Vertical, 0);
+        root.set_hexpand(true);
+        root.set_vexpand(true);
         shell_frame.add(&root);
 
-        let strip_frame = panel_frame("titlebar");
-        strip_frame.set_size_request(-1, TITLEBAR_HEIGHT);
-        let strip_box = GtkBox::new(Orientation::Horizontal, 0);
-        strip_box.set_margin_top(6);
-        strip_box.set_margin_bottom(6);
-        strip_box.set_margin_start(10);
-        strip_box.set_margin_end(10);
-        strip_box.add(&label("[ KESKOS DEPLOYMENT CONSOLE ]", "strip-title"));
-        strip_frame.add(&strip_box);
-        root.pack_start(&strip_frame, false, false, 0);
+        root.pack_start(&build_titlebar(), false, false, 0);
 
         let body = GtkBox::new(Orientation::Horizontal, 0);
+        body.set_hexpand(true);
         body.set_vexpand(true);
         root.pack_start(&body, true, true, 0);
 
-        let sidebar_frame = panel_frame("rail");
-        sidebar_frame.set_size_request(SIDEBAR_WIDTH, -1);
-        let sidebar_box = GtkBox::new(Orientation::Vertical, 0);
+        let step_rail = build_step_rail();
+        body.pack_start(&step_rail.frame, false, false, 0);
 
-        let rail_brand = GtkBox::new(Orientation::Vertical, 4);
-        rail_brand.set_margin_top(14);
-        rail_brand.set_margin_bottom(12);
-        rail_brand.set_margin_start(12);
-        rail_brand.set_margin_end(12);
-        rail_brand.add(&label("K E S K   O S", "rail-brand-title"));
-        rail_brand.add(&label("FIRST BOOT SEQUENCE", "rail-brand-meta"));
-        rail_brand.add(&label("S.P.L.I.T. EDITION", "rail-brand-meta"));
-        sidebar_box.pack_start(&rail_brand, false, false, 0);
-        sidebar_box.pack_start(&panel_separator(), false, false, 0);
+        let page_host = build_page_host(&PAGES[0]);
+        body.pack_start(&page_host.column, true, true, 0);
 
-        let mut sidebar_buttons = Vec::with_capacity(PAGES.len());
-        for spec in PAGES {
-            let button = Button::with_label(spec.sidebar);
-            button.set_halign(Align::Fill);
-            button.set_hexpand(true);
-            button.set_size_request(-1, STEP_ROW_HEIGHT);
-            prepare_button(&button);
-            align_button_label_start(&button);
-            add_class(&button, "step");
-            sidebar_box.pack_start(&button, false, false, 0);
-            sidebar_buttons.push(button);
-        }
-        sidebar_frame.add(&sidebar_box);
-        body.pack_start(&sidebar_frame, false, false, 0);
+        let welcome_page = build_welcome_page(&cli);
+        let (network_page, network) = build_network_page();
+        let (browser_page, browser) = build_browser_page();
+        let (topbar_page, topbar) = build_topbar_page();
+        let (optional_page, optional) = build_optional_apps_page();
+        let (theme_page, theme) = build_theme_page();
+        let links_page = build_links_page();
+        let (finish_page, finish) = build_finish_page();
 
-        let content_column = GtkBox::new(Orientation::Vertical, 0);
-        body.pack_start(&content_column, true, true, 0);
+        mount_page(&page_host.stack, "welcome", welcome_page);
+        mount_page(&page_host.stack, "network", network_page);
+        mount_page(&page_host.stack, "browser", browser_page);
+        mount_page(&page_host.stack, "topbar", topbar_page);
+        mount_page(&page_host.stack, "apps", optional_page);
+        mount_page(&page_host.stack, "theme", theme_page);
+        mount_page(&page_host.stack, "links", links_page);
+        mount_page(&page_host.stack, "finish", finish_page);
 
-        let header_frame = panel_frame("hero");
-        header_frame.set_size_request(-1, HERO_HEIGHT);
-        header_frame.set_margin_top(10);
-        header_frame.set_margin_bottom(0);
-        header_frame.set_margin_start(10);
-        header_frame.set_margin_end(10);
-        let header_box = GtkBox::new(Orientation::Vertical, 6);
-        header_box.set_margin_top(14);
-        header_box.set_margin_bottom(14);
-        header_box.set_margin_start(14);
-        header_box.set_margin_end(14);
-        let title_label = label(&hero_title_for_page(&PAGES[0]), "hero-title");
-        let description_label = label(PAGES[0].description, "hero-subtitle");
-        description_label.set_line_wrap(true);
-        header_box.add(&title_label);
-        header_box.add(&description_label);
-        header_frame.add(&header_box);
-        content_column.pack_start(&header_frame, false, false, 0);
-
-        let content_frame = panel_frame("content-shell");
-        content_frame.set_hexpand(true);
-        content_frame.set_vexpand(true);
-        content_frame.set_margin_top(10);
-        content_frame.set_margin_bottom(0);
-        content_frame.set_margin_start(10);
-        content_frame.set_margin_end(10);
-        content_column.pack_start(&content_frame, true, true, 0);
-        let content_box = GtkBox::new(Orientation::Vertical, 0);
-        content_frame.add(&content_box);
-
-        let stack = Stack::new();
-        stack.set_hexpand(true);
-        stack.set_vexpand(true);
-        stack.set_hhomogeneous(true);
-        stack.set_vhomogeneous(true);
-        stack.set_transition_type(StackTransitionType::None);
-        stack.set_interpolate_size(false);
-        content_box.pack_start(&stack, true, true, 0);
-
-        let network = build_network_page(&stack);
-        let browser = build_browser_page(&stack);
-        let topbar = build_topbar_page(&stack);
-        let optional = build_optional_apps_page(&stack);
-        let theme = build_theme_page(&stack);
-        let finish = build_finish_page(&stack);
-        build_welcome_page(&stack, &cli);
-        build_links_page(&stack);
-
-        let footer_frame = panel_frame("nav");
-        footer_frame.set_size_request(-1, NAV_HEIGHT);
-        let footer_box = GtkBox::new(Orientation::Horizontal, 12);
-        footer_box.set_margin_top(8);
-        footer_box.set_margin_bottom(8);
-        footer_box.set_margin_start(12);
-        footer_box.set_margin_end(12);
-        let footer_label = label("Waiting for first-boot choices.", "muted");
-        footer_label.set_hexpand(true);
-        footer_label.set_halign(Align::Start);
-        let button_box = GtkBox::new(Orientation::Horizontal, 8);
-        let back_button = Button::with_label("[ BACK ]");
-        let skip_button = Button::with_label("[ SKIP ]");
-        let continue_button = Button::with_label("[ CONTINUE ]");
-        prepare_button(&back_button);
-        prepare_button(&skip_button);
-        prepare_button(&continue_button);
-        apply_primary(&continue_button);
-        button_box.pack_start(&back_button, false, false, 0);
-        button_box.pack_start(&skip_button, false, false, 0);
-        button_box.pack_start(&continue_button, false, false, 0);
-        footer_box.pack_start(&footer_label, true, true, 0);
-        footer_box.pack_end(&button_box, false, false, 0);
-        footer_frame.add(&footer_box);
-        root.pack_end(&footer_frame, false, false, 0);
+        let bottom_nav = build_bottom_nav();
+        root.pack_end(&bottom_nav.frame, false, false, 0);
 
         let network_snapshot = backend::network_snapshot();
         let state = WizardState {
@@ -780,14 +719,14 @@ impl WelcomeApp {
             cli,
             logger,
             window,
-            stack,
-            title_label,
-            description_label,
-            footer_label,
-            back_button,
-            skip_button,
-            continue_button,
-            sidebar_buttons,
+            stack: page_host.stack,
+            title_label: page_host.title_label,
+            description_label: page_host.description_label,
+            footer_label: bottom_nav.status_label,
+            back_button: bottom_nav.back_button,
+            skip_button: bottom_nav.skip_button,
+            continue_button: bottom_nav.continue_button,
+            sidebar_buttons: step_rail.buttons,
             network,
             browser,
             topbar,
@@ -2007,8 +1946,167 @@ Links available: keskos.org, docs.keskos.org, github.com/memegeko/keskos, downlo
     }
 }
 
-fn build_welcome_page(stack: &Stack, cli: &Cli) {
-    let content = page_box();
+fn build_titlebar() -> Frame {
+    let strip_frame = panel_frame("titlebar");
+    strip_frame.set_size_request(-1, TITLEBAR_HEIGHT);
+    strip_frame.set_hexpand(true);
+
+    let strip_box = GtkBox::new(Orientation::Horizontal, 0);
+    strip_box.set_margin_top(6);
+    strip_box.set_margin_bottom(6);
+    strip_box.set_margin_start(CONTENT_OUTER_MARGIN);
+    strip_box.set_margin_end(CONTENT_OUTER_MARGIN);
+    strip_box.add(&label("[ KESKOS DEPLOYMENT CONSOLE ]", "strip-title"));
+    strip_frame.add(&strip_box);
+    strip_frame
+}
+
+fn build_step_rail() -> StepRailWidgets {
+    let frame = panel_frame("rail");
+    frame.set_size_request(SIDEBAR_WIDTH, -1);
+    frame.set_hexpand(false);
+    frame.set_vexpand(true);
+    frame.set_halign(Align::Start);
+    frame.set_valign(Align::Fill);
+
+    let sidebar_box = GtkBox::new(Orientation::Vertical, 0);
+    sidebar_box.set_size_request(SIDEBAR_WIDTH, -1);
+    sidebar_box.set_hexpand(false);
+    sidebar_box.set_vexpand(true);
+
+    let rail_brand = GtkBox::new(Orientation::Vertical, 4);
+    rail_brand.set_margin_top(HERO_INSET);
+    rail_brand.set_margin_bottom(PANEL_INSET);
+    rail_brand.set_margin_start(PANEL_INSET);
+    rail_brand.set_margin_end(PANEL_INSET);
+    rail_brand.add(&label("K E S K   O S", "rail-brand-title"));
+    rail_brand.add(&label("FIRST BOOT SEQUENCE", "rail-brand-meta"));
+    rail_brand.add(&label("S.P.L.I.T. EDITION", "rail-brand-meta"));
+    sidebar_box.pack_start(&rail_brand, false, false, 0);
+    sidebar_box.pack_start(&panel_separator(), false, false, 0);
+
+    let mut buttons = Vec::with_capacity(PAGES.len());
+    for spec in PAGES {
+        let button = Button::with_label(spec.sidebar);
+        button.set_halign(Align::Fill);
+        button.set_valign(Align::Start);
+        button.set_hexpand(true);
+        button.set_size_request(-1, STEP_ROW_HEIGHT);
+        prepare_button(&button);
+        align_button_label_start(&button);
+        add_class(&button, "step");
+        sidebar_box.pack_start(&button, false, false, 0);
+        buttons.push(button);
+    }
+
+    let spacer = GtkBox::new(Orientation::Vertical, 0);
+    spacer.set_hexpand(true);
+    spacer.set_vexpand(true);
+    sidebar_box.pack_start(&spacer, true, true, 0);
+
+    frame.add(&sidebar_box);
+    StepRailWidgets { frame, buttons }
+}
+
+fn build_page_host(initial_page: &PageSpec) -> PageHostWidgets {
+    let column = GtkBox::new(Orientation::Vertical, 0);
+    column.set_hexpand(true);
+    column.set_vexpand(true);
+    column.set_halign(Align::Fill);
+    column.set_valign(Align::Fill);
+
+    let header_frame = panel_frame("hero");
+    header_frame.set_size_request(-1, HERO_HEIGHT);
+    header_frame.set_hexpand(true);
+    header_frame.set_margin_top(CONTENT_OUTER_MARGIN);
+    header_frame.set_margin_bottom(0);
+    header_frame.set_margin_start(CONTENT_OUTER_MARGIN);
+    header_frame.set_margin_end(CONTENT_OUTER_MARGIN);
+
+    let header_box = GtkBox::new(Orientation::Vertical, 6);
+    header_box.set_margin_top(HERO_INSET);
+    header_box.set_margin_bottom(HERO_INSET);
+    header_box.set_margin_start(HERO_INSET);
+    header_box.set_margin_end(HERO_INSET);
+    let title_label = label(&hero_title_for_page(initial_page), "hero-title");
+    let description_label = label(initial_page.description, "hero-subtitle");
+    description_label.set_line_wrap(true);
+    header_box.add(&title_label);
+    header_box.add(&description_label);
+    header_frame.add(&header_box);
+    column.pack_start(&header_frame, false, false, 0);
+
+    let content_frame = panel_frame("content-shell");
+    content_frame.set_hexpand(true);
+    content_frame.set_vexpand(true);
+    content_frame.set_margin_top(CONTENT_OUTER_MARGIN);
+    content_frame.set_margin_bottom(0);
+    content_frame.set_margin_start(CONTENT_OUTER_MARGIN);
+    content_frame.set_margin_end(CONTENT_OUTER_MARGIN);
+    let content_box = GtkBox::new(Orientation::Vertical, 0);
+    content_box.set_hexpand(true);
+    content_box.set_vexpand(true);
+    content_frame.add(&content_box);
+
+    let stack = Stack::new();
+    stack.set_hexpand(true);
+    stack.set_vexpand(true);
+    stack.set_hhomogeneous(true);
+    stack.set_vhomogeneous(true);
+    stack.set_transition_type(StackTransitionType::None);
+    stack.set_interpolate_size(false);
+    content_box.pack_start(&stack, true, true, 0);
+    column.pack_start(&content_frame, true, true, 0);
+
+    PageHostWidgets {
+        column,
+        title_label,
+        description_label,
+        stack,
+    }
+}
+
+fn build_bottom_nav() -> BottomNavWidgets {
+    let frame = panel_frame("nav");
+    frame.set_size_request(-1, NAV_HEIGHT);
+    frame.set_hexpand(true);
+
+    let footer_box = GtkBox::new(Orientation::Horizontal, 12);
+    footer_box.set_margin_top(8);
+    footer_box.set_margin_bottom(8);
+    footer_box.set_margin_start(PANEL_INSET);
+    footer_box.set_margin_end(PANEL_INSET);
+
+    let status_label = label("Waiting for first-boot choices.", "muted");
+    status_label.set_hexpand(true);
+    status_label.set_halign(Align::Start);
+
+    let button_box = GtkBox::new(Orientation::Horizontal, 8);
+    let back_button = Button::with_label("[ BACK ]");
+    let skip_button = Button::with_label("[ SKIP ]");
+    let continue_button = Button::with_label("[ CONTINUE ]");
+    prepare_button(&back_button);
+    prepare_button(&skip_button);
+    prepare_button(&continue_button);
+    apply_primary(&continue_button);
+    button_box.pack_start(&back_button, false, false, 0);
+    button_box.pack_start(&skip_button, false, false, 0);
+    button_box.pack_start(&continue_button, false, false, 0);
+    footer_box.pack_start(&status_label, true, true, 0);
+    footer_box.pack_end(&button_box, false, false, 0);
+    frame.add(&footer_box);
+
+    BottomNavWidgets {
+        frame,
+        status_label,
+        back_button,
+        skip_button,
+        continue_button,
+    }
+}
+
+fn build_welcome_page(cli: &Cli) -> GtkBox {
+    let content = page_content_box();
     let top_row = GtkBox::new(Orientation::Horizontal, 10);
     top_row.set_homogeneous(true);
 
@@ -2046,11 +2144,11 @@ fn build_welcome_page(stack: &Stack, cli: &Cli) {
     notes_panel.add(&label("> Use [ SKIP ] when a setup block is not needed yet.", "muted"));
     notes_panel.add(&label("> Finish writes the first-boot completion marker only at the end of the flow.", "muted"));
     content.add(&notes_frame);
-    stack.add_named(&wrap_scrolled(content), "welcome");
+    content
 }
 
-fn build_network_page(stack: &Stack) -> NetworkWidgets {
-    let content = page_box();
+fn build_network_page() -> (GtkBox, NetworkWidgets) {
+    let content = page_content_box();
     let top_row = GtkBox::new(Orientation::Horizontal, 10);
     top_row.set_homogeneous(true);
 
@@ -2125,9 +2223,8 @@ fn build_network_page(stack: &Stack) -> NetworkWidgets {
     console_panel.add(&label("> Reachability check: ping -c 1 -W 2 8.8.8.8", "muted"));
     console_panel.add(&label("> Browser and package installs stay blocked until an uplink is detected.", "muted"));
     content.add(&console_frame);
-    stack.add_named(&wrap_scrolled(content), "network");
 
-    NetworkWidgets {
+    let widgets = NetworkWidgets {
         support_badge,
         uplink_status,
         uplink_message,
@@ -2142,11 +2239,13 @@ fn build_network_page(stack: &Stack) -> NetworkWidgets {
         scan_button,
         connect_button,
         recheck_button,
-    }
+    };
+
+    (content, widgets)
 }
 
-fn build_browser_page(stack: &Stack) -> BrowserWidgets {
-    let content = page_box();
+fn build_browser_page() -> (GtkBox, BrowserWidgets) {
+    let content = page_content_box();
     let top_row = GtkBox::new(Orientation::Horizontal, 10);
     top_row.set_homogeneous(true);
 
@@ -2198,13 +2297,12 @@ fn build_browser_page(stack: &Stack) -> BrowserWidgets {
     actions_panel.add(&label("> Browser setup stays available on rerun without touching the first-boot marker.", "muted"));
     top_row.pack_start(&actions_frame, true, true, 0);
     content.add(&top_row);
-    stack.add_named(&wrap_scrolled(content), "browser");
-
-    BrowserWidgets { combo, status, homepage_toggle, install_button, default_button, theme_button, note }
+    let widgets = BrowserWidgets { combo, status, homepage_toggle, install_button, default_button, theme_button, note };
+    (content, widgets)
 }
 
-fn build_topbar_page(stack: &Stack) -> TopBarWidgets {
-    let content = page_box();
+fn build_topbar_page() -> (GtkBox, TopBarWidgets) {
+    let content = page_content_box();
     let top_row = GtkBox::new(Orientation::Horizontal, 10);
     top_row.set_homogeneous(true);
 
@@ -2249,9 +2347,7 @@ fn build_topbar_page(stack: &Stack) -> TopBarWidgets {
     control_panel.add(&buttons);
     top_row.pack_start(&control_frame, true, true, 0);
     content.add(&top_row);
-    stack.add_named(&wrap_scrolled(content), "topbar");
-
-    TopBarWidgets {
+    let widgets = TopBarWidgets {
         backend_status,
         info,
         master_toggle,
@@ -2262,11 +2358,13 @@ fn build_topbar_page(stack: &Stack) -> TopBarWidgets {
         apply_button,
         reset_button,
         restart_button,
-    }
+    };
+
+    (content, widgets)
 }
 
-fn build_optional_apps_page(stack: &Stack) -> OptionalWidgets {
-    let content = page_box();
+fn build_optional_apps_page() -> (GtkBox, OptionalWidgets) {
+    let content = page_content_box();
     let info = label("", "muted");
     info.set_line_wrap(true);
     let (info_frame, info_panel) = titled_section("PACKAGE SOURCE");
@@ -2321,13 +2419,13 @@ fn build_optional_apps_page(stack: &Stack) -> OptionalWidgets {
     action_panel.add(&label("> Docker is intentionally not part of this first-boot flow.", "muted"));
     action_panel.add(&label("> Optional installs are always confirmation-based and never run silently.", "muted"));
     content.add(&action_frame);
-    stack.add_named(&wrap_scrolled(content), "apps");
 
-    OptionalWidgets { rows, info, install_button }
+    let widgets = OptionalWidgets { rows, info, install_button };
+    (content, widgets)
 }
 
-fn build_theme_page(stack: &Stack) -> ThemeWidgets {
-    let content = page_box();
+fn build_theme_page() -> (GtkBox, ThemeWidgets) {
+    let content = page_content_box();
     let top_row = GtkBox::new(Orientation::Horizontal, 10);
     top_row.set_homogeneous(true);
 
@@ -2403,9 +2501,8 @@ fn build_theme_page(stack: &Stack) -> ThemeWidgets {
     let (note_frame, note_panel) = titled_section("BOOT SPLASH STATUS");
     note_panel.add(&boot_note);
     content.add(&note_frame);
-    stack.add_named(&wrap_scrolled(content), "theme");
 
-    ThemeWidgets {
+    let widgets = ThemeWidgets {
         theme_active,
         kde_defaults,
         launcher,
@@ -2419,11 +2516,13 @@ fn build_theme_page(stack: &Stack) -> ThemeWidgets {
         reapply_panels,
         reapply_konsole,
         reapply_dunst,
-    }
+    };
+
+    (content, widgets)
 }
 
-fn build_links_page(stack: &Stack) {
-    let content = page_box();
+fn build_links_page() -> GtkBox {
+    let content = page_content_box();
     let row = GtkBox::new(Orientation::Horizontal, 10);
     row.set_homogeneous(true);
 
@@ -2458,12 +2557,11 @@ fn build_links_page(stack: &Stack) {
     row.pack_start(&tools_frame, true, true, 0);
 
     content.add(&row);
-
-    stack.add_named(&wrap_scrolled(content), "links");
+    content
 }
 
-fn build_finish_page(stack: &Stack) -> FinishWidgets {
-    let content = page_box();
+fn build_finish_page() -> (GtkBox, FinishWidgets) {
+    let content = page_content_box();
     let row = GtkBox::new(Orientation::Horizontal, 10);
     row.set_homogeneous(true);
 
@@ -2501,15 +2599,20 @@ fn build_finish_page(stack: &Stack) -> FinishWidgets {
     row.pack_start(&right_column, true, true, 0);
 
     content.add(&row);
-    stack.add_named(&wrap_scrolled(content), "finish");
-    FinishWidgets {
+    let widgets = FinishWidgets {
         summary,
         report_basic,
         report_extra,
-    }
+    };
+
+    (content, widgets)
 }
 
-fn wrap_scrolled(content: GtkBox) -> ScrolledWindow {
+fn mount_page(stack: &Stack, key: &str, content: GtkBox) {
+    stack.add_named(&build_page_shell(content), key);
+}
+
+fn build_page_shell(content: GtkBox) -> ScrolledWindow {
     let scroll = ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
     scroll.set_policy(PolicyType::Automatic, PolicyType::Automatic);
     scroll.set_hexpand(true);
@@ -2538,12 +2641,15 @@ fn wrap_scrolled(content: GtkBox) -> ScrolledWindow {
     scroll
 }
 
-fn page_box() -> GtkBox {
-    let content = GtkBox::new(Orientation::Vertical, 12);
-    content.set_margin_top(10);
-    content.set_margin_bottom(10);
-    content.set_margin_start(10);
-    content.set_margin_end(10);
+fn page_content_box() -> GtkBox {
+    let content = GtkBox::new(Orientation::Vertical, PAGE_SECTION_SPACING);
+    content.set_hexpand(true);
+    content.set_halign(Align::Fill);
+    content.set_valign(Align::Start);
+    content.set_margin_top(CONTENT_OUTER_MARGIN);
+    content.set_margin_bottom(CONTENT_OUTER_MARGIN);
+    content.set_margin_start(CONTENT_OUTER_MARGIN);
+    content.set_margin_end(CONTENT_OUTER_MARGIN);
     content
 }
 
@@ -2575,11 +2681,11 @@ fn panel_separator() -> Separator {
 
 fn titled_section(title: &str) -> (Frame, GtkBox) {
     let frame = section_frame();
-    let panel = GtkBox::new(Orientation::Vertical, 8);
-    panel.set_margin_top(12);
-    panel.set_margin_bottom(12);
-    panel.set_margin_start(12);
-    panel.set_margin_end(12);
+    let panel = GtkBox::new(Orientation::Vertical, PANEL_SECTION_SPACING);
+    panel.set_margin_top(PANEL_INSET);
+    panel.set_margin_bottom(PANEL_INSET);
+    panel.set_margin_start(PANEL_INSET);
+    panel.set_margin_end(PANEL_INSET);
     if !title.is_empty() {
         panel.add(&label(title, "panel-title"));
         panel.add(&panel_separator());
@@ -2617,7 +2723,9 @@ fn align_button_label_start(button: &Button) {
     if let Some(child) = button.child() {
         if let Ok(label) = child.downcast::<Label>() {
             label.set_xalign(0.0);
-            label.set_line_wrap(true);
+            label.set_line_wrap(false);
+            label.set_single_line_mode(true);
+            label.set_ellipsize(gtk::pango::EllipsizeMode::End);
         }
     }
 }

@@ -7,27 +7,27 @@ Presentation {
 
     property int frameIndex: 0
     property string debugText: "Awaiting Calamares session output..."
-    property string stageText: "> Installer console online.\n> Waiting for partition and software-loadout stages to begin."
+    property string stageText: "> Installer console online.\n> Waiting for partition and deploy-review stages to begin."
     property string summaryText: "> Live desktop: active\n> Installer backend: armed\n> Target root pipeline: ready"
-    property string profileText: "- Filesystem: Arch defaults from Calamares\n- Bootloader: GRUB (EFI)\n- Desktop: KDE Plasma + Quickshell HUD\n- Browser/profile: resolved during software loadout\n- Login target: finished desktop without forced first-run app"
-    property string notesText: "- Meta opens the KeskOS Launcher.\n- Software loadout choices are written into the target install.\n- A sanitized install report is sent to api.keskos.org.\n- Detailed installer output is written to ~/.cache/keskos/calamares-installer.log"
+    property string profileText: "- Filesystem: Arch defaults from Calamares\n- Bootloader: GRUB (EFI)\n- Desktop: KDE Plasma + KeskOS defaults\n- Personalization: deferred to Kesk Welcome after login\n- Login target: finished desktop with Welcome handoff"
+    property string notesText: "- Calamares applies required KeskOS desktop defaults automatically.\n- Browser selection, widgets, optional apps, and theme checks continue in Kesk Welcome.\n- A sanitized install report is sent to api.keskos.org.\n- Detailed installer output is written to ~/.cache/keskos/calamares-installer.log"
     property var stageFrames: [
-        "> Installer console online.\n> Waiting for partition and software-loadout stages to begin.",
+        "> Installer console online.\n> Waiting for partition and deploy-review stages to begin.",
         "> Pre-flight checks complete.\n> Locale, keyboard, and storage modules are standing by.",
-        "> Software loadout profile armed.\n> Browser, package bundle, and feature choices will be applied during deployment.",
+        "> Deploy review armed.\n> Core desktop defaults and post-install hooks will be applied automatically.",
         "> Target deployment pipeline ready.\n> Calamares will hand off to the KeskOS post-install hooks automatically."
     ]
     property var summaryFrames: [
         "> Live desktop: active\n> Installer backend: armed\n> Target root pipeline: ready",
-        "> Network path: available\n> Locale + time: staged\n> User profile module: armed",
-        "> Package manifest: loaded\n> Browser selection: pending loadout\n> Plasma theme profile: ready",
-        "> Optional bundles: on standby\n> Bootloader target: GRUB (EFI)\n> Post-install hooks: staged"
+        "> Network path: optional\n> Locale + time: staged\n> User profile module: armed",
+        "> Package manifest: loaded\n> Desktop defaults: staged\n> Plasma theme profile: ready",
+        "> Welcome handoff: staged\n> Bootloader target: GRUB (EFI)\n> Post-install hooks: staged"
     ]
     property var debugFrames: [
         "[ OK ] calamares branding loaded\n[ OK ] display stack online\n[ OK ] package manifest loaded\n[ .. ] waiting for installer interaction",
-        "[ OK ] locale + keyboard modules online\n[ OK ] storage probe armed\n[ OK ] software loadout page ready\n[ .. ] awaiting user selections",
-        "[ OK ] target root pipeline staged\n[ OK ] browser theme payload ready\n[ OK ] feature flags queued for apply\n[ .. ] deployment begins after confirmation",
-        "[ OK ] live session helpers available\n[ OK ] install logs still written to cache\n[ OK ] no first-run lock screen after reboot\n[ .. ] installer running in guided deployment mode"
+        "[ OK ] locale + keyboard modules online\n[ OK ] storage probe armed\n[ OK ] deploy review page ready\n[ .. ] awaiting confirmation",
+        "[ OK ] target root pipeline staged\n[ OK ] desktop defaults queued for apply\n[ OK ] Welcome handoff staged\n[ .. ] deployment begins after confirmation",
+        "[ OK ] live session helpers available\n[ OK ] install logs still written to cache\n[ OK ] first-boot personalization moves to Welcome\n[ .. ] installer running in guided deployment mode"
     ]
 
     function refreshDebug() {

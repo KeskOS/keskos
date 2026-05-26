@@ -1,20 +1,22 @@
 # KeskOS Calamares Installer
 
-KeskOS handles core post-install personalization inside Calamares, then hands off to `Kesk Welcome` for the first real user login flow.
+KeskOS now keeps Calamares focused on core OS deployment, then hands first-boot personalization to `Kesk Welcome` after login.
 
 Flow:
 
 1. Live ISO boots into the themed Plasma session.
 2. Calamares runs with the KeskOS black/orange branding.
-3. The `SOFTWARE LOADOUT` step collects:
-   - default browser
-   - browser theme/startpage toggle
-   - optional package bundles
-   - additional pacman package names
-   - desktop / feature flags
-4. The `DEPLOY REVIEW` step shows the queued choices.
-5. During install, Calamares resolves package choices, installs optional packages, writes install choice logs, and applies the target configuration.
-6. The installed system reboots directly into the configured desktop.
+3. Calamares walks the streamlined deployment flow:
+   - `01 PRE-FLIGHT`
+   - `02 LOCATION`
+   - `03 KEYBOARD`
+   - `04 DISK TARGET`
+   - `05 USER PROFILE`
+   - `06 DEPLOY REVIEW`
+   - `07 INSTALL`
+   - `08 COMPLETE`
+4. During install, Calamares applies the required KeskOS desktop defaults non-interactively.
+5. The installed system reboots into the configured desktop, where `Kesk Welcome` continues personalization after login.
 
 ## Files
 
@@ -29,8 +31,7 @@ Calamares config:
 
 Build note:
 
-- `build.sh` patches the upstream AUR `calamares` PKGBUILD so `packagechooser` and `packagechooserq` are not skipped at compile time. KeskOS depends on those modules being present in `/usr/lib/calamares/modules/`.
-- `build.sh` also stages `librewolf-bin`, `zen-browser-bin`, and `brave-bin` into the ISO-local repository so browser selection does not depend on the installed system fetching them later.
+- `build.sh` still stages `librewolf-bin`, `zen-browser-bin`, and `brave-bin` into the ISO-local repository so the installed system and first-boot tooling have local browser packages available.
 - browser AUR builds use a temporary build-only GPG home under the safe build root; if a browser binary package still cannot verify its upstream key, the build retries that browser package with `--skippgpcheck` and prints a warning.
 
 Calamares branding:
@@ -57,12 +58,7 @@ Show phase:
 3. `keyboard`
 4. `partition`
 5. `users`
-6. `packagechooser@keskos_browser`
-7. `packagechooser@keskos_browser_theme`
-8. `packagechooser@keskos_bundles`
-9. `packagechooser@keskos_desktop_profile`
-10. `packagechooser@keskos_addons`
-11. `notesqml@keskos_review`
+6. `notesqml@keskos_review`
 
 Exec phase:
 
@@ -75,81 +71,69 @@ Exec phase:
 7. postinstall shell hook, including install-report source generation and success send
 8. umount
 
-## Software Loadout
+## Deployment Defaults
 
-The installer now uses native Calamares `packagechooser` steps for the interactive software flow. These write standard global-storage keys:
+The interactive loadout pages are gone from Calamares. Instead, the hidden `keskoschoices` module resolves a fixed deployment profile and writes the normal install-choice artifacts used by the post-install scripts.
 
-- `packagechooser_keskos_browser`
-- `packagechooser_keskos_browser_theme`
-- `packagechooser_keskos_bundles`
-- `packagechooser_keskos_desktop_profile`
-- `packagechooser_keskos_addons`
+Default behavior in the current flow:
 
-The review page reads those keys and renders the terminal-style deploy summary before install begins.
+- keeps a temporary default browser mapping for the installed system
+- keeps all staged browsers installed so `Kesk Welcome` can handle browser choice later
+- skips browser theme / startpage apply during Calamares
+- applies required desktop defaults such as theme, layout, and SDDM branding automatically
+- preserves the normal install-choice JSON and package list outputs used by post-install hooks
 
-## Browser Selection
+The review page shows a terminal-style deployment summary and explicitly tells the user that personalization continues in `Kesk Welcome` after login.
 
-Browser choices:
+## What Calamares Still Owns
 
-- `librewolf`
-- `zen`
-- `brave`
+- pre-flight checks
+- locale / location
+- keyboard
+- disk target / partitioning
+- user profile
+- deploy review
+- package install
+- post-install defaults
+- reboot / completion
 
-Resolution rules:
+## What Kesk Welcome Owns
 
-- package candidates are defined in `package-manifest.json`
-- the supported browsers are staged into the ISO from the KeskOS local AUR-built repository
-- the resolver maps the selected browser to the packaged desktop and package identifiers used by the install scripts
-- post-install cleanup removes the non-selected browsers so the installed system keeps only the chosen one
+- network / uplink
+- browser selection
+- top bar widgets
+- optional apps
+- theme check
+- system links
+- finish / install report
 
-Post-install behavior:
+## Browser Packages
 
-- the selected browser is written into mime defaults
-- the browser launcher path uses `xdg-open` first, so it follows the chosen default browser
-- the Plasma taskbar browser launcher prefers the system default browser before falling back to hardcoded candidates
-
-## Browser Theme / Startpage
-
-The local startpage is installed at:
-
-- `/usr/share/keskos/startpage/index.html`
-
-Browser theme assets:
-
-- `/usr/share/keskos/browser-themes/firefox/`
-- `/usr/share/keskos/browser-themes/brave/`
-
-Best-effort behavior:
-
-- Firefox-family browsers get homepage policy files
-- Brave gets managed startup / homepage policies
-- if a browser-specific path is unavailable, the install keeps going and logs the partial apply
-
-## Package Bundles And Extra Packages
-
-Bundles are defined in:
+Supported browser packages remain defined in:
 
 - `airootfs/usr/share/keskos/installer/package-manifest.json`
 
-The current installer supports:
+The install still writes a default browser desktop entry into the target so links open cleanly before the user completes `Kesk Welcome`, but Calamares no longer asks the user to choose a browser and it no longer prunes the other staged browsers.
 
-- curated bundle selection
-- browser selection
-- browser theme toggle
-- desktop profile selection
-- system add-on selection
+## Automatic Branding / Defaults
 
-The current pass does **not** include a fully searchable pacman UI inside Calamares, and it no longer uses the abandoned custom `notesqml` loadout experiment.
+Required defaults that still apply automatically during install:
 
-Install behavior:
+- KeskOS base theme
+- default KDE layout
+- default SDDM theme when present
+- required desktop packages
+- Kesk Welcome handoff after login
 
-- optional packages are added as `try_install`
-- failures are logged and skipped
-- base install continues
-- Calamares does not force `pacman -Sy` before this step anymore
-- if the live installer has no internet, the optional package step is skipped instead of aborting the install
+`apply-install-choices.sh` still reads:
 
-Output files:
+- `/var/lib/keskos/install-choices.json`
+
+That keeps the post-install pipeline stable even though the visible choice pages are gone.
+
+## Output Files
+
+The streamlined flow still writes:
 
 - `/tmp/keskos-install-choices.json`
 - `/tmp/keskos-final-packages.txt`
@@ -160,50 +144,15 @@ Output files:
 - `/var/lib/keskos/final-packages.txt`
 - `/var/log/keskos-install.log`
 
-Install reporting:
+## Install Reporting
 
 - successful installs send a sanitized JSON report to `https://api.keskos.org/install-report`
 - failed installs send a sanitized failure report from the installer wrapper
 - the installer never sends directly to Discord
 
-## Feature Flags
-
-Current flags with real effect in this pass:
-
-- Quickshell top bar
-- KDE bottom taskbar
-- Plasma theme
-- window borders
-- browser startpage
-- SDDM theme
-- Docker support
-- Bluetooth support
-- printing support
-
-Recorded but still partial:
-
-- Plymouth theme
-- NVIDIA support beyond package install
-
-## First-Run App Status
-
-`keskos-first-run` still exists as a fallback/debug tool, but it is no longer part of the mandatory install flow.
-
-Changes:
-
-- no session-start launch
-- autostart desktop files are shipped disabled
-- manual use is still available for debugging
-
-Run manually:
-
-```bash
-keskos-first-run --force
-```
-
 ## Debugging
 
-Check install choices in the live session:
+Check resolved install defaults in the live session:
 
 ```bash
 cat /tmp/keskos-install-choices.json
@@ -222,7 +171,7 @@ Run Calamares with debug logging:
 calamares -d
 ```
 
-Validate package availability manually:
+Validate staged browser packages manually:
 
 ```bash
 pacman -Si librewolf
@@ -232,9 +181,10 @@ pacman -Si brave-browser
 
 ## Extending The Installer
 
-Add or edit bundle groups:
+Adjust the manifest and silent defaults:
 
 - `airootfs/usr/share/keskos/installer/package-manifest.json`
+- `calamares/modules/keskoschoices.conf`
 
 Change the deploy review UI:
 

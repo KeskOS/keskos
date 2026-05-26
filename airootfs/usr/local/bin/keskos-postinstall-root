@@ -276,7 +276,7 @@ main() {
   ensure_kesk_command_permissions
   apply_kcm_cleanup_defaults
   target_user="$(detect_target_user || true)"
-  log "Applying Calamares software loadout choices."
+  log "Applying KeskOS deployment defaults."
   apply_install_choices "$target_user"
   log "Recording install report source data."
   record_install_report_source

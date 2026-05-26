@@ -13,6 +13,7 @@ WORKSPACE_MIRRORLIST="${CACHE_ROOT}/mirrorlist-${UID}"
 PREPARE_ONLY=0
 BUILD_ARGS=()
 TMP_BIND_ACTIVE=0
+TMP_BIND_STATUS="not-attempted"
 RESOLV_BIND_ACTIVE=0
 RESOLV_BIND_TARGET=""
 RESOLV_BIND_CREATED_TARGET=0
@@ -49,7 +50,8 @@ What it does:
   - restores execute bits on shebang scripts
   - moves the heavy mkarchiso work tree out of /tmp
   - forces compiler and linker temp files into a Linux-local TMPDIR
-  - temporarily bind-mounts that temp directory over /tmp for pacstrap/mkarchiso
+  - tries to bind-mount that temp directory over /tmp for pacstrap/mkarchiso
+  - falls back to TMPDIR/TMP/TEMP only when WSL refuses the /tmp remount
   - snapshots a stable resolver config for the root-run build
   - uses a WSL-friendly pacman mirrorlist with extra fallback servers
   - runs the normal build.sh from that sanitized copy
@@ -69,6 +71,8 @@ is_wsl() {
 }
 
 cleanup_workspace() {
+  cleanup_stale_tmp_mount
+
   if [[ -e "$WORK_REPO" ]]; then
     log "Removing previous WSL workspace copy..."
     rm -rf -- "$WORK_REPO"
@@ -97,6 +101,38 @@ cleanup_tmp_bind() {
   fi
 }
 
+cleanup_stale_tmp_mount() {
+  local mount_sources=""
+  local attempt=0
+
+  mount_sources="$(findmnt -rn -T /tmp -o SOURCE 2>/dev/null || true)"
+  if [[ -z "$mount_sources" ]] || ! grep -Eq 'keskos-wsl-build|/deleted' <<<"$mount_sources"; then
+    return 0
+  fi
+
+  warn "Detected a stale KeskOS WSL /tmp bind mount. Unmounting it before preparing the next build."
+  while (( attempt < 6 )); do
+    mount_sources="$(findmnt -rn -T /tmp -o SOURCE 2>/dev/null || true)"
+    if [[ -z "$mount_sources" ]] || ! grep -Eq 'keskos-wsl-build|/deleted' <<<"$mount_sources"; then
+      break
+    fi
+    if ! sudo umount /tmp; then
+      break
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  mount_sources="$(findmnt -rn -T /tmp -o SOURCE 2>/dev/null || true)"
+  if [[ -n "$mount_sources" ]] && grep -Eq 'keskos-wsl-build|/deleted' <<<"$mount_sources"; then
+    fail "A stale /tmp bind mount is still active. Run 'sudo umount /tmp' until /tmp is back on tmpfs, then rerun buildwsl.sh."
+  fi
+
+  if [[ ! -d /tmp ]]; then
+    sudo mkdir -p /tmp
+  fi
+  sudo chmod 1777 /tmp 2>/dev/null || true
+}
+
 cleanup_resolv_bind() {
   if (( RESOLV_BIND_ACTIVE == 1 )); then
     log "Unmounting temporary resolver bind mount..."
@@ -122,10 +158,35 @@ cleanup_resolv_bind() {
   RESOLV_BIND_TARGET=""
 }
 
+ensure_tmp_mountpoint() {
+  if [[ ! -e /tmp ]]; then
+    log "Creating missing /tmp mount point before the WSL build..."
+    sudo mkdir -p /tmp
+  elif [[ ! -d /tmp ]]; then
+    fail "/tmp exists but is not a directory, so the WSL build helper cannot use it as a bind target."
+  fi
+
+  sudo chmod 1777 /tmp 2>/dev/null || true
+}
+
 bind_workspace_tmp() {
+  ensure_tmp_mountpoint
   log "Bind-mounting ${WORKSPACE_TMPDIR} over /tmp for the build..."
-  sudo mount --bind "$WORKSPACE_TMPDIR" /tmp
-  TMP_BIND_ACTIVE=1
+  if sudo mount --bind "$WORKSPACE_TMPDIR" /tmp; then
+    TMP_BIND_ACTIVE=1
+    TMP_BIND_STATUS="bind-mounted /tmp"
+    return 0
+  fi
+
+  TMP_BIND_ACTIVE=0
+  TMP_BIND_STATUS="TMPDIR-only fallback"
+
+  if [[ "${KESKOS_REQUIRE_TMP_BIND:-0}" == "1" ]]; then
+    fail "Could not bind-mount ${WORKSPACE_TMPDIR} over /tmp. Fix WSL mount support or rerun without KESKOS_REQUIRE_TMP_BIND=1."
+  fi
+
+  warn "Could not bind-mount ${WORKSPACE_TMPDIR} over /tmp. Continuing with the Linux-local TMPDIR/TMP/TEMP exports only."
+  warn "If the build later fails because a root-run tool still insists on /tmp, fix the WSL mount issue and rerun with KESKOS_REQUIRE_TMP_BIND=1 to make that failure happen up front."
 }
 
 resolve_resolv_bind_target() {
@@ -478,6 +539,7 @@ main() {
     log "Prepared workspace: ${WORK_REPO}"
     log "Planned build root: ${WORKSPACE_BUILD_ROOT}"
     log "Planned TMPDIR: ${WORKSPACE_TMPDIR}"
+    log "Planned temp strategy: try /tmp bind mount, then fall back to TMPDIR-only if WSL refuses it"
     log "Prepared resolver: ${WORKSPACE_RESOLV_CONF}"
     log "Prepared mirrorlist: ${WORKSPACE_MIRRORLIST}"
     return 0
@@ -496,6 +558,7 @@ main() {
   log "Workspace copy: ${WORK_REPO}"
   log "Build root: ${WORKSPACE_BUILD_ROOT}"
   log "TMPDIR: ${WORKSPACE_TMPDIR}"
+  log "Temp strategy used: ${TMP_BIND_STATUS}"
   log "Resolver snapshot: ${WORKSPACE_RESOLV_CONF}"
   log "Mirrorlist: ${WORKSPACE_MIRRORLIST}"
   log "Mirrored output: ${ORIGINAL_OUT_DIR}"

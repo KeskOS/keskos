@@ -8,8 +8,8 @@ WORK_ROOT="${SAFE_BUILD_ROOT}/work"
 STAGE_DIR="${WORK_ROOT}/profile"
 ARCHISO_WORK_DIR="${WORK_ROOT}/archiso"
 LOCAL_REPO_DIR="${WORK_ROOT}/localrepo/x86_64"
-GENERATED_PACMAN_CONF="${WORK_ROOT}/pacman.conf"
-GENERATED_MIRRORLIST="${WORK_ROOT}/mirrorlist"
+GENERATED_PACMAN_CONF="${STAGE_DIR}/pacman.conf"
+GENERATED_MIRRORLIST="${STAGE_DIR}/pacman-mirrorlist"
 LOCAL_BUILD_PACMAN_CONF="${WORK_ROOT}/local-build-pacman.conf"
 LOCAL_BUILD_MIRRORLIST="${WORK_ROOT}/local-build-mirrorlist"
 LOCAL_BUILD_PACMAN_WRAPPER="${WORK_ROOT}/local-build-pacman"
@@ -359,7 +359,7 @@ build_aur_package() {
   fi
 
   if [[ "$package_name" == "calamares" ]]; then
-    log "Patching AUR calamares PKGBUILD to keep packagechooser modules enabled and apply KeskOS UI polish..."
+    log "Patching AUR calamares PKGBUILD to apply KeskOS UI polish and compatibility fixes..."
     install -m 644 "${REPO_ROOT}/calamares/patches/keskos_calamares_ui.py" \
       "${package_dir}/keskos_calamares_ui.py"
     python3 - "$package_dir/PKGBUILD" <<'PY'
@@ -503,8 +503,39 @@ sync_local_build_repo() {
 }
 
 generate_pacman_conf() {
-  log "Generating a pacman.conf that points at the local Calamares repository..."
+  log "Generating a profile-local pacman.conf that points at the local Calamares repository..."
   write_generated_pacman_conf "${GENERATED_PACMAN_CONF}" "${GENERATED_MIRRORLIST}"
+}
+
+validate_generated_pacman_conf() {
+  [[ -f "${GENERATED_PACMAN_CONF}" ]] || fail "Generated pacman.conf is missing: ${GENERATED_PACMAN_CONF}"
+  [[ -s "${GENERATED_PACMAN_CONF}" ]] || fail "Generated pacman.conf is empty: ${GENERATED_PACMAN_CONF}"
+  [[ -f "${GENERATED_MIRRORLIST}" ]] || fail "Generated pacman mirrorlist is missing: ${GENERATED_MIRRORLIST}"
+  [[ -s "${GENERATED_MIRRORLIST}" ]] || fail "Generated pacman mirrorlist is empty: ${GENERATED_MIRRORLIST}"
+
+  python3 - "${GENERATED_PACMAN_CONF}" <<'PY'
+from pathlib import Path
+import sys
+
+config_path = Path(sys.argv[1])
+text = config_path.read_text(encoding="utf-8")
+include_paths: list[str] = []
+
+for raw_line in text.splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#"):
+        continue
+    if line.lower().startswith("include"):
+        _, _, include_value = line.partition("=")
+        include_value = include_value.strip()
+        if not include_value:
+            raise SystemExit(f"Generated pacman.conf has an empty Include directive: {config_path}")
+        include_paths.append(include_value)
+
+for include_path in include_paths:
+    if not Path(include_path).is_file():
+        raise SystemExit(f"Generated pacman.conf references a missing Include path: {include_path}")
+PY
 }
 
 preflight_repo_sync() {
@@ -512,6 +543,7 @@ preflight_repo_sync() {
   local attempt=1
   local max_attempts="${KESKOS_PACMAN_SYNC_ATTEMPTS:-3}"
 
+  validate_generated_pacman_conf
   build_sudo_env sudo_env
   sudo mkdir -p "$PACMAN_SYNC_DB_PATH" "$PACMAN_SYNC_CACHE_DIR"
 
@@ -544,6 +576,7 @@ stage_profile_basics() {
   cp -a "${REPO_ROOT}/efiboot" "${STAGE_DIR}/"
   install -m 644 "${REPO_ROOT}/profiledef.sh" "${STAGE_DIR}/profiledef.sh"
   install -m 644 "${REPO_ROOT}/packages.x86_64" "${STAGE_DIR}/packages.x86_64"
+  install -d -m 1777 "${STAGE_DIR}/airootfs/tmp" "${STAGE_DIR}/airootfs/var/tmp"
 
   python3 - "${STAGE_DIR}/airootfs/etc/os-release" "${ISO_VERSION}" <<'PY'
 import pathlib
@@ -706,6 +739,7 @@ stage_boot_branding() {
 run_mkarchiso() {
   local -a sudo_env=()
   local returncode=0
+  validate_generated_pacman_conf
   log "Building the KeskOS ISO with mkarchiso..."
   build_sudo_env sudo_env
   if sudo env "${sudo_env[@]}" mkarchiso \

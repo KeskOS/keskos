@@ -16,88 +16,37 @@ Item {
     readonly property color dimText: "#8f8a84"
     readonly property color borderColor: "#ce6a35"
 
-    property var browserLabels: ({
-        "librewolf": "LibreWolf",
-        "zen": "Zen Browser",
-        "brave": "Brave",
-        "firefox": "Firefox"
-    })
-
-    property var bundleLabels: ({
-        "gaming": "Gaming",
-        "chat": "Chat",
-        "development": "Development",
-        "media": "Media",
-        "office": "Office",
-        "system_tools": "System Tools",
-        "customization": "Customization",
-        "drivers_gaming": "Drivers / Gaming Support"
-    })
-
-    property var featureLabels: ({
-        "quickshell_topbar": "Quickshell top bar",
-        "kde_bottom_taskbar": "KDE bottom taskbar",
-        "plasma_theme": "Plasma theme",
-        "window_borders": "Window borders",
-        "sddm_theme": "SDDM theme",
-        "plymouth": "Plymouth boot splash",
-        "browser_startpage": "Browser startpage",
-        "gaming_tools": "Gaming performance tools",
-        "bluetooth": "Bluetooth tools",
-        "printing": "Printing support",
-        "docker": "Docker support",
-        "nvidia": "NVIDIA support"
-    })
-
-    function splitSelection(key) {
-        var raw = Global.value(key)
-        if (!raw || String(raw).length === 0) {
-            return []
+    function internetState() {
+        var value = Global.value("hasInternet")
+        if (value === true || value === 1 || String(value).toLowerCase() === "true") {
+            return "online"
         }
-        return String(raw).split(",").map(function(item) { return item.trim() }).filter(function(item) { return item.length > 0 })
-    }
-
-    function browserLabel() {
-        var selection = splitSelection("packagechooser_keskos_browser")
-        var key = selection.length ? selection[0] : "librewolf"
-        return browserLabels[key] || "LibreWolf"
-    }
-
-    function bundleText() {
-        var bundles = splitSelection("packagechooser_keskos_bundles")
-        if (!bundles.length) return "none"
-        var labels = []
-        for (var i = 0; i < bundles.length; ++i) {
-            labels.push(bundleLabels[bundles[i]] || bundles[i])
+        if (value === false || value === 0 || String(value).toLowerCase() === "false") {
+            return "offline"
         }
-        return labels.join(", ")
+        return "unknown"
     }
 
-    function applyBrowserTheme() {
-        var themeSelection = splitSelection("packagechooser_keskos_browser_theme")
-        return !themeSelection.length || themeSelection[0] !== "browser_theme_off"
-    }
-
-    function desktopProfileLabel() {
-        var profileSelection = splitSelection("packagechooser_keskos_desktop_profile")
-        if (profileSelection.length && profileSelection[0] === "plasma_base") {
-            return "KDE Plasma Base Profile"
+    function networkBannerText() {
+        var state = internetState()
+        if (state === "online") {
+            return "[ OK ] NETWORK LINK: ONLINE"
         }
-        return "KeskOS Split Shell Profile"
-    }
-
-    function addonText() {
-        var addons = splitSelection("packagechooser_keskos_addons")
-        if (!addons.length) return "none"
-        var labels = []
-        for (var i = 0; i < addons.length; ++i) {
-            labels.push(featureLabels[addons[i]] || addons[i])
+        if (state === "offline") {
+            return "[ WARN ] NETWORK LINK: OFFLINE"
         }
-        return labels.join(", ")
+        return "[ INFO ] NETWORK LINK: OPTIONAL DURING INSTALL"
     }
 
-    function hasInternet() {
-        return !!Global.value("hasInternet")
+    function networkBannerColor() {
+        var state = internetState()
+        if (state === "online") {
+            return accent
+        }
+        if (state === "offline") {
+            return "#ff8a57"
+        }
+        return textColor
     }
 
     Rectangle {
@@ -138,7 +87,7 @@ Item {
                 }
 
                 Text {
-                    text: "Review the KeskOS deployment profile below. Continue to start installation."
+                    text: "Review the core KeskOS deployment profile below. Continue to start installation."
                     color: textColor
                     font.family: "JetBrains Mono"
                     font.pixelSize: 14
@@ -146,8 +95,8 @@ Item {
                 }
 
                 Text {
-                    text: hasInternet() ? "[ OK ] NETWORK LINK: ONLINE" : "[ WARN ] NETWORK LINK: OFFLINE"
-                    color: hasInternet() ? accent : "#ff8a57"
+                    text: networkBannerText()
+                    color: networkBannerColor()
                     font.family: "JetBrains Mono"
                     font.pixelSize: 14
                     font.bold: true
@@ -182,7 +131,7 @@ Item {
 
                     Text {
                         width: parent.width
-                        text: "[ OK ] Browser: " + browserLabel()
+                        text: "[ OK ] Core deployment: base system + KDE Plasma desktop"
                         color: textColor
                         font.family: "JetBrains Mono"
                         font.pixelSize: 13
@@ -191,7 +140,7 @@ Item {
 
                     Text {
                         width: parent.width
-                        text: "[ OK ] Browser theme: " + (applyBrowserTheme() ? "enabled" : "disabled")
+                        text: "[ OK ] Branding defaults: KeskOS theme, KDE layout, and login theme apply automatically"
                         color: textColor
                         font.family: "JetBrains Mono"
                         font.pixelSize: 13
@@ -200,7 +149,7 @@ Item {
 
                     Text {
                         width: parent.width
-                        text: "[ OK ] Bundles: " + bundleText()
+                        text: "[ OK ] Required desktop packages: installed during deployment without extra personalization pages"
                         color: textColor
                         font.family: "JetBrains Mono"
                         font.pixelSize: 13
@@ -209,7 +158,7 @@ Item {
 
                     Text {
                         width: parent.width
-                        text: "[ OK ] Desktop profile: " + desktopProfileLabel()
+                        text: "[ OK ] First-boot handoff: Kesk Welcome autostart remains enabled for after-login setup"
                         color: textColor
                         font.family: "JetBrains Mono"
                         font.pixelSize: 13
@@ -218,7 +167,7 @@ Item {
 
                     Text {
                         width: parent.width
-                        text: "[ OK ] System add-ons: " + addonText()
+                        text: "[ INFO ] Browser selection, widgets, optional apps, and theme checks now continue in Kesk Welcome"
                         color: textColor
                         font.family: "JetBrains Mono"
                         font.pixelSize: 13
@@ -249,7 +198,7 @@ Item {
 
                     Text {
                         width: parent.width
-                        text: "Optional packages are validated during deployment. Missing optional packages are skipped with warnings instead of aborting the full install."
+                        text: "First-boot personalization will continue in Kesk Welcome after login."
                         color: textColor
                         font.family: "JetBrains Mono"
                         font.pixelSize: 12
@@ -258,7 +207,7 @@ Item {
 
                     Text {
                         width: parent.width
-                        text: "The installed system should reboot directly into a finished KeskOS desktop. The old forced first-run app is no longer part of the default install path."
+                        text: "Calamares now handles deployment only: locale, keyboard, disk target, user profile, package install, and post-install defaults."
                         color: textColor
                         font.family: "JetBrains Mono"
                         font.pixelSize: 12
@@ -267,9 +216,9 @@ Item {
 
                     Text {
                         width: parent.width
-                        text: hasInternet()
-                            ? "Repository validation is available in the live environment."
-                            : "Offline installs continue with the base image. Optional software may not be added until the system has network access."
+                        text: internetState() === "online"
+                            ? "Repository validation is available in the live environment. Welcome can continue personalization after the first login."
+                            : "Network is optional during Calamares. If the live session is offline, Welcome can finish browser and optional-app setup after the system has network access."
                         color: dimText
                         font.family: "JetBrains Mono"
                         font.pixelSize: 12
