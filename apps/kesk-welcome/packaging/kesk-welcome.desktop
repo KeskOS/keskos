@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Version=1.0
-Name=Kesk Welcome
-Comment=Run the KeskOS first-boot setup flow
-Exec=kesk welcome
-Icon=preferences-system
-Terminal=false
-Categories=System;Settings;
