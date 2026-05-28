@@ -1,37 +1,14 @@
 pkgname=kesk-settings-kcms
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="KeskOS custom KDE System Settings modules"
-arch=(x86_64 aarch64)
+pkgdesc="Compatibility package that installs the new keskos-settings package"
+arch=(any)
 url="https://github.com/memegeko/keskos"
 license=(GPL-3.0-or-later)
-depends=(
-  kde-cli-tools
-  kcmutils
-  kirigami
-  python
-  systemsettings
-  xdg-utils
-)
-makedepends=(
-  cmake
-  extra-cmake-modules
-  gcc
-  kcmutils
-  kcoreaddons
-  qt6-base
-  qt6-declarative
-)
+depends=(keskos-settings)
 source=()
 sha256sums=()
 
-build() {
-  cmake -B "${srcdir}/build" -S "${startdir}" \
-    -DCMAKE_BUILD_TYPE=None \
-    -DCMAKE_INSTALL_PREFIX=/usr
-  cmake --build "${srcdir}/build"
-}
-
 package() {
-  DESTDIR="${pkgdir}" cmake --install "${srcdir}/build"
+  :
 }

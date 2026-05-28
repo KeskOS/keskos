@@ -17,13 +17,75 @@ liveuser ALL=(ALL) NOPASSWD: ALL
 EOF
 chmod 0440 /etc/sudoers.d/10-liveuser
 
+ensure_keskos_repo_config() {
+  mkdir -p /etc/pacman.d
+
+  if [[ ! -s /etc/pacman.d/mirrorlist ]] || ! grep -Eq '^[[:space:]]*Server[[:space:]]*=' /etc/pacman.d/mirrorlist; then
+    cat >/etc/pacman.d/mirrorlist <<'EOF'
+## KeskOS fallback Arch Linux mirrorlist
+Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
+EOF
+  fi
+
+  if [[ ! -f /etc/pacman.d/keskos.conf ]]; then
+    cat >/etc/pacman.d/keskos.conf <<'EOF'
+[keskos]
+# TODO: switch this to `SigLevel = Required DatabaseOptional` once
+# `keskos-keyring` is published and the repo server signs packages + metadata.
+SigLevel = Optional TrustAll
+Include = /etc/pacman.d/keskos-mirrorlist
+EOF
+  fi
+
+  cat >/etc/pacman.conf <<'EOF'
+[options]
+HoldPkg = pacman glibc
+Architecture = auto
+CheckSpace
+ParallelDownloads = 5
+SigLevel = Required DatabaseOptional
+LocalFileSigLevel = Optional
+
+Include = /etc/pacman.d/keskos.conf
+
+[core]
+Include = /etc/pacman.d/mirrorlist
+
+[extra]
+Include = /etc/pacman.d/mirrorlist
+
+[multilib]
+Include = /etc/pacman.d/mirrorlist
+EOF
+}
+
+find_lockscreen_qml() {
+  local candidate=""
+
+  for candidate in \
+    /usr/share/plasma/look-and-feel/com.keskos.desktop/contents/lockscreen/LockScreen.qml \
+    /usr/share/keskos/source/configs/look-and-feel/com.keskos.desktop/contents/lockscreen/LockScreen.qml \
+    /usr/local/share/keskos/source/configs/look-and-feel/com.keskos.desktop/contents/lockscreen/LockScreen.qml
+  do
+    [[ -f "$candidate" ]] || continue
+    printf '%s\n' "$candidate"
+    return 0
+  done
+
+  return 1
+}
+
 cp -a /etc/skel/. /home/liveuser/
 chown -R liveuser:liveuser /home/liveuser
 
+ensure_keskos_repo_config
+
 install -d -m 0755 /usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen
-install -m 0644 \
-  /usr/local/share/keskos/source/configs/look-and-feel/com.keskos.desktop/contents/lockscreen/LockScreen.qml \
-  /usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen/LockScreen.qml
+if lockscreen_qml="$(find_lockscreen_qml)"; then
+  install -m 0644 \
+    "$lockscreen_qml" \
+    /usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen/LockScreen.qml
+fi
 
 if [[ -f /usr/bin/kesk ]]; then
   chmod 0755 /usr/bin/kesk

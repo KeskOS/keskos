@@ -9,7 +9,7 @@ import shutil
 import sys
 from typing import Iterable, Sequence
 
-from common import KeskConsole, SessionLogger, run_capture, shell_join, stream_command
+from common import KeskConsole, SessionLogger, branded_header_title, run_capture, shell_join, stream_command
 
 PACMAN_LOCK_PATH = Path(os.environ.get("KESK_PACMAN_LOCK_PATH", "/var/lib/pacman/db.lck"))
 REBOOT_REQUIRED_PATH = Path(os.environ.get("KESK_REBOOT_REQUIRED_PATH", "/var/run/reboot-required"))
@@ -371,7 +371,7 @@ def render_source_status(console: KeskConsole, source: UpdateSource) -> None:
 
 def render_dashboard(console: KeskConsole, state: UpgradeState, logger: SessionLogger) -> None:
     console.clear()
-    console.header("KESK SYSTEM UPGRADE", "OFFICIAL REPOS // AUR // FLATPAK // FWUPD")
+    console.header(branded_header_title("Upgrade Console"), "OFFICIAL REPOS // AUR // FLATPAK // FWUPD")
     console.line()
     for key in ("official", "aur", "flatpak", "firmware"):
         render_source_status(console, state.source(key))
@@ -394,7 +394,7 @@ def render_dashboard(console: KeskConsole, state: UpgradeState, logger: SessionL
 
 def render_package_list(console: KeskConsole, state: UpgradeState) -> None:
     console.clear()
-    console.header("KESK PACKAGE LIST", "CURRENTLY DETECTED UPDATE CANDIDATES")
+    console.header(branded_header_title("Package List"), "CURRENTLY DETECTED UPDATE CANDIDATES")
 
     for key in ("official", "aur", "flatpak", "firmware"):
         source = state.source(key)
@@ -525,7 +525,7 @@ def perform_upgrade(
     prompt_for_confirmation: bool = True,
 ) -> int:
     console.clear()
-    console.header("KESK SYSTEM UPGRADE", "EXECUTION PLAN")
+    console.header(branded_header_title("Upgrade Console"), "EXECUTION PLAN")
     for description in describe_selection(selected):
         console.status("ok", description)
     console.line()
@@ -541,7 +541,7 @@ def perform_upgrade(
     overall_code = 0
 
     console.clear()
-    console.header("KESK SYSTEM UPGRADE", "LIVE COMMAND OUTPUT")
+    console.header(branded_header_title("Upgrade Console"), "LIVE COMMAND OUTPUT")
     for source in selected:
         console.section(f"RUNNING {source.label}")
         console.muted(shell_join(source.upgrade_command))
@@ -574,7 +574,7 @@ def perform_upgrade(
 
 
 def print_help(console: KeskConsole) -> int:
-    console.header("KESK SYSTEM UPGRADE", "INTERACTIVE UPDATE MANAGER")
+    console.header(branded_header_title("Upgrade Console"), "INTERACTIVE UPDATE MANAGER")
     console.line("Usage: kesk upgrade")
     console.line("       kesk upgrade --check --json")
     console.line("       kesk upgrade --list --json")
@@ -629,10 +629,10 @@ def run_direct_action(
     selected, selection_code = choose_sources_from_keys(mapping[action_flag], state)
     if not selected:
         if selection_code == 3:
-            console.header("KESK SYSTEM UPGRADE", "SAFETY CHECK")
+            console.header(branded_header_title("Upgrade Console"), "SAFETY CHECK")
             console.status("warn", f"pacman lock detected at {PACMAN_LOCK_PATH}")
             return 3
-        console.header("KESK SYSTEM UPGRADE", "NO RUNNABLE SOURCES")
+        console.header(branded_header_title("Upgrade Console"), "NO RUNNABLE SOURCES")
         console.status("warn", "no runnable update source is available for that selection")
         return 1
 
@@ -671,7 +671,7 @@ def main(args: Sequence[str], _root: Path) -> int:
             logger.close()
 
     if os.geteuid() == 0:
-        console.header("KESK SYSTEM UPGRADE", "SAFETY CHECK")
+        console.header(branded_header_title("Upgrade Console"), "SAFETY CHECK")
         console.status("warn", "run `kesk upgrade` as a regular user so yay and sudo behave safely")
         return 1
 

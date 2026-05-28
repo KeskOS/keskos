@@ -9,17 +9,17 @@ sidebar: widget
 navigation: widget
 
 strings:
-  productName: "KESKOS INSTALLATION CONSOLE"
+  productName: "KeskOS Deployment Console"
   shortProductName: "KESKOS"
-  version: "S.P.L.I.T. EDITION"
-  shortVersion: "S.P.L.I.T."
+  version: "KeskOS"
+  shortVersion: "KeskOS"
   versionedName: "KESKOS"
   shortVersionedName: "KESKOS"
   bootloaderEntryName: "KeskOS"
-  productUrl: "https://github.com/memegeko/keskos"
-  supportUrl: "https://github.com/memegeko/keskos/issues"
-  knownIssuesUrl: "https://github.com/memegeko/keskos/issues"
-  releaseNotesUrl: "https://github.com/memegeko/keskos"
+  productUrl: "https://keskos.org"
+  supportUrl: "https://docs.keskos.org"
+  knownIssuesUrl: "https://github.com/KeskOS"
+  releaseNotesUrl: "https://downloads.keskos.org"
   donateUrl: ""
 
 images:

@@ -36,12 +36,23 @@ write_mimeapps() {
   mkdir -p "$(dirname "$target_path")"
   cat >"$target_path" <<EOF
 [Default Applications]
+EOF
+  if [[ -n "$desktop_id" ]]; then
+    cat >>"$target_path" <<EOF
 x-scheme-handler/http=${desktop_id}
 x-scheme-handler/https=${desktop_id}
 text/html=${desktop_id}
 application/xhtml+xml=${desktop_id}
+EOF
+  fi
+  cat >>"$target_path" <<EOF
 inode/directory=dolphin.desktop
 EOF
+}
+
+browser_desktop_installed() {
+  local desktop_id="$1"
+  [[ -n "$desktop_id" ]] && [[ -f "/usr/share/applications/${desktop_id}" ]]
 }
 
 write_firefox_policies() {
@@ -237,10 +248,23 @@ main() {
 
   mkdir -p /etc/xdg /etc/keskos
   cp -f "$CHOICES_FILE" /etc/keskos/install-choices.json
-  write_mimeapps /etc/xdg/mimeapps.list "$browser_desktop"
-  log "Set system mime defaults to ${browser_desktop}."
+  if ! browser_desktop_installed "$browser_desktop"; then
+    log "Browser desktop ${browser_desktop:-<unset>} is not installed in the target image; deferring browser defaults to Kesk Welcome."
+    browser_desktop=""
+  fi
 
-  apply_browser_theme "$browser_key" "$target_home"
+  write_mimeapps /etc/xdg/mimeapps.list "$browser_desktop"
+  if [[ -n "$browser_desktop" ]]; then
+    log "Set system mime defaults to ${browser_desktop}."
+  else
+    log "Skipped system browser mime defaults because no browser is preinstalled."
+  fi
+
+  if [[ -n "$browser_desktop" ]]; then
+    apply_browser_theme "$browser_key" "$target_home"
+  else
+    log "Skipped browser theme preapply because no browser package is installed yet."
+  fi
   enable_optional_services
   apply_login_and_boot_themes
   remove_unselected_browsers "$browser_key" "$browser_package" "$remove_other_browsers"

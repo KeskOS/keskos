@@ -321,12 +321,21 @@ remove_legacy_eww() {
 }
 
 configure_default_apps() {
-  write_if_needed "$TARGET_HOME/.config/mimeapps.list" 644 <<EOF
+  if [[ -n "$DEFAULT_BROWSER_DESKTOP" && -f "/usr/share/applications/${DEFAULT_BROWSER_DESKTOP}" ]]; then
+    write_if_needed "$TARGET_HOME/.config/mimeapps.list" 644 <<EOF
 [Default Applications]
 x-scheme-handler/http=${DEFAULT_BROWSER_DESKTOP}
 x-scheme-handler/https=${DEFAULT_BROWSER_DESKTOP}
 text/html=${DEFAULT_BROWSER_DESKTOP}
 application/xhtml+xml=${DEFAULT_BROWSER_DESKTOP}
+inode/directory=dolphin.desktop
+EOF
+    return 0
+  fi
+
+  log "Skipping browser default association setup because ${DEFAULT_BROWSER_DESKTOP:-<unset>} is not installed."
+  write_if_needed "$TARGET_HOME/.config/mimeapps.list" 644 <<'EOF'
+[Default Applications]
 inode/directory=dolphin.desktop
 EOF
 }

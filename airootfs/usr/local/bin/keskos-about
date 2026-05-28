@@ -1,20 +1,100 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOURCE_ROOT="/usr/local/share/keskos/source"
-ABOUT_QML="${SOURCE_ROOT}/configs/about/AboutKeskOS.qml"
+branding_helper="/usr/lib/keskos/branding.sh"
 
-if [[ ! -f "$ABOUT_QML" ]]; then
+resolve_source_root() {
+  local candidate=""
+
+  for candidate in \
+    "${KESKOS_SOURCE_ROOT:-}" \
+    "$HOME/.local/share/keskos/source" \
+    "/usr/local/share/keskos/source" \
+    "/usr/share/keskos/source"
+  do
+    [[ -n "$candidate" ]] || continue
+    if [[ -f "$candidate/configs/about/AboutKeskOS.qml" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+SOURCE_ROOT="$(resolve_source_root || true)"
+ABOUT_QML="${SOURCE_ROOT}/configs/about/AboutKeskOS.qml"
+TMP_DIR=""
+
+if [[ -z "$SOURCE_ROOT" || ! -f "$ABOUT_QML" ]]; then
   printf 'keskos-about: missing AboutKeskOS.qml\n' >&2
   exit 1
 fi
 
+if [[ -r "$branding_helper" ]]; then
+  # shellcheck disable=SC1090
+  . "$branding_helper"
+fi
+
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/keskos-about.XXXXXX")"
+trap 'rm -rf "${TMP_DIR}"' EXIT
+
+ABOUT_QML_RENDERED="${TMP_DIR}/AboutKeskOS.qml"
+
+python3 - "$ABOUT_QML" "$ABOUT_QML_RENDERED" \
+  "${OS_NAME:-KeskOS}" \
+  "${OS_BRAND_LINE:-KeskOS}" \
+  "${OS_LAYER_NAME:-}" \
+  "${OS_CHANNEL:-stable}" \
+  "${OS_BUILD_ID:-dev}" \
+  "$(uname -m 2>/dev/null || printf 'unknown')" \
+  "$(uname -r 2>/dev/null || printf 'unknown')" \
+  "$(date +%Y)" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+target = pathlib.Path(sys.argv[2])
+name = sys.argv[3]
+brand_line = sys.argv[4]
+layer_name = sys.argv[5]
+channel = sys.argv[6]
+build_id = sys.argv[7]
+architecture = sys.argv[8]
+kernel = sys.argv[9]
+copy_year = sys.argv[10]
+
+spaced_name = " ".join(list(name.upper()))
+window_title = f"ABOUT {name.upper()}"
+layer_title = layer_name or "OPERATING SYSTEM"
+layer_line = layer_name or "unavailable"
+
+payload = source.read_text(encoding="utf-8")
+replacements = {
+    "__KESKOS_WINDOW_TITLE__": window_title,
+    "__KESKOS_NAME_SPACED__": spaced_name,
+    "__KESKOS_LAYER_TITLE__": layer_title,
+    "__KESKOS_BRAND_LINE__": brand_line,
+    "__KESKOS_LAYER_LINE__": layer_line,
+    "__KESKOS_CHANNEL__": channel,
+    "__KESKOS_BUILD_ID__": build_id,
+    "__KESKOS_ARCH__": architecture,
+    "__KESKOS_KERNEL__": kernel,
+    "__KESKOS_COPY_YEAR__": copy_year,
+}
+
+for key, value in replacements.items():
+    payload = payload.replace(key, value)
+
+target.write_text(payload, encoding="utf-8")
+PY
+
 if command -v qmlscene6 >/dev/null 2>&1; then
-  exec qmlscene6 "$ABOUT_QML"
+  exec qmlscene6 "$ABOUT_QML_RENDERED"
 fi
 
 if command -v qmlscene >/dev/null 2>&1; then
-  exec qmlscene "$ABOUT_QML"
+  exec qmlscene "$ABOUT_QML_RENDERED"
 fi
 
 printf 'keskos-about: qmlscene is not installed\n' >&2

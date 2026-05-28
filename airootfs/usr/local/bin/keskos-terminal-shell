@@ -3,16 +3,42 @@ set -euo pipefail
 
 shell_bin="${SHELL:-/bin/bash}"
 user_fastfetch_config="${HOME}/.config/fastfetch/config.jsonc"
-system_fastfetch_config="/usr/local/share/keskos/source/configs/fastfetch/config.jsonc"
 bash_rc_override="${HOME}/.config/keskos/bashrc"
+branding_helper="/usr/lib/keskos/branding.sh"
+
+find_system_fastfetch_config() {
+  local candidate=""
+
+  for candidate in \
+    "${KESKOS_SOURCE_ROOT:-}/configs/fastfetch/config.jsonc" \
+    "/usr/local/share/keskos/source/configs/fastfetch/config.jsonc" \
+    "/usr/share/keskos/source/configs/fastfetch/config.jsonc" \
+    "/usr/share/keskos/defaults/fastfetch/config.jsonc"
+  do
+    [[ -n "$candidate" ]] || continue
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+system_fastfetch_config="$(find_system_fastfetch_config || true)"
 
 if [[ ! -x "$shell_bin" ]]; then
   shell_bin="/bin/bash"
 fi
 
+if [[ -r "$branding_helper" ]]; then
+  # shellcheck disable=SC1090
+  . "$branding_helper"
+fi
+
 if [[ -t 1 && -z "${KESKOS_FASTFETCH_SHOWN:-}" ]]; then
   export KESKOS_FASTFETCH_SHOWN=1
-  printf '\033]0;%s\007' 'S.P.L.I.T. TERMINAL'
+  printf '\033]0;%s\007' "${OS_BRAND_LINE:-KeskOS} Terminal"
   if command -v fastfetch >/dev/null 2>&1; then
     if [[ -f "$user_fastfetch_config" ]]; then
       fastfetch --config "$user_fastfetch_config" || true

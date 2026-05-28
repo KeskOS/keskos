@@ -55,10 +55,79 @@ Project planning and active work are tracked in:
 
 - [ROADMAP.md](ROADMAP.md)
 - [docs/repository-structure.md](docs/repository-structure.md)
+- [docs/iso-package-strategy.md](docs/iso-package-strategy.md)
+- [docs/branding-strategy.md](docs/branding-strategy.md)
+- [docs/repo-cleanup-report.md](docs/repo-cleanup-report.md)
 - [docs/launcher-switching.md](docs/launcher-switching.md)
 - [docs/plasma-panel-layout.md](docs/plasma-panel-layout.md)
 - [docs/keybinds.md](docs/keybinds.md)
 - [docs/website-content/README.md](docs/website-content/README.md)
+
+Desktop shell and branding package sources now live in `KeskOS/keskos-desktop`; this repo consumes those packages for ISO assembly instead of acting as their long-term source of truth.
+
+## ISO Build Model
+
+The default ISO build is now repo-first:
+
+- `KESKOS_BUILD_MODE=release ./build.sh`
+- `KESKOS_BUILD_MODE=release ./build.sh --check` validates the build path without starting `mkarchiso`
+- consumes published `keskos-*` packages from `[keskos]`
+- uses `[keskos-local]` only for explicit local-dev overrides
+- reads release branding from `keskos-release` metadata instead of hardcoding layer labels across apps
+- does not preinstall browser binaries into the ISO
+- leaves browser installation to `Kesk Welcome` after first boot
+- keeps duplicate app and desktop package source trees out of the ISO repo where possible
+
+For override testing, local development mode is explicit:
+
+```bash
+KESKOS_BUILD_MODE=local-dev ./build.sh
+```
+
+Validation-only local-dev example:
+
+```bash
+KESKOS_BUILD_MODE=local-dev ./build.sh --check
+```
+
+Optional local-dev override example:
+
+```bash
+KESKOS_BUILD_MODE=local-dev \
+KESKOS_BUILD_SYSTEMSETTINGS_OVERRIDE=1 \
+KESKOS_BUILD_CALAMARES_OVERRIDE=1 \
+KESKOS_LOCAL_PACKAGES="my-test-package" \
+./build.sh
+```
+
+Optional browser-package override testing:
+
+```bash
+KESKOS_BUILD_MODE=local-dev KESKOS_BUILD_BROWSER_PKGS=1 ./build.sh
+```
+
+See [docs/iso-package-strategy.md](docs/iso-package-strategy.md) for the current package-source rules and local override flags. The latest removal and keep decisions are tracked in [docs/repo-cleanup-report.md](docs/repo-cleanup-report.md).
+
+Quick repo cleanup check:
+
+```bash
+./scripts/check-repo-cleanliness.sh
+```
+
+Branding consistency check:
+
+```bash
+./scripts/check-branding.sh
+```
+
+Central branding metadata lives in:
+
+- `/etc/keskos-release`
+- `/usr/lib/keskos/branding.json`
+
+`keskos-release` is the source of truth for the current visible line, so moving from `Layer 4` to `Layer 5` should happen by updating that package rather than hardcoding new layer strings in every app.
+
+The ISO seed intentionally excludes `brave-bin`, `librewolf-bin`, and `zen-browser-bin`. `keskos-browsers-meta` is also kept out of the seed until it stops pulling `firefox`, so browser setup currently relies on `Kesk Welcome` plus `keskos-browser-startpage`.
 
 ## Main Features
 
@@ -68,7 +137,7 @@ Booting the ISO gives you a real live desktop session with:
 
 - KDE Plasma
 - autologin into the live environment
-- working launcher, browser, terminal, and file manager
+- working launcher, terminal, and file manager
 - `Install KeskOS` desktop shortcut and menu entry
 - preloaded branding and theme assets
 
@@ -81,7 +150,6 @@ KeskOS installs through Calamares with a custom visual style and standard guided
 - Keyboard
 - Partitions
 - Users
-- Software loadout
 - Deploy review
 - Install
 - Finish
@@ -95,7 +163,7 @@ The installed system carries over the visual identity:
 - branded bottom panel with launcher, pinned apps, and workspace switcher
 - custom Konsole profile
 - custom browser home page
-- browser selection during install
+- browser choice during first boot in `Kesk Welcome`
 - prefilled username on the first login screen after install
 - custom login / lock / splash stack
 
@@ -132,7 +200,7 @@ KeskOS currently ships with these major pieces:
 - KeskOS default panel layout template and reset tooling
 - Konsole
 - Dolphin
-- browser selection flow for LibreWolf, Zen Browser, or Brave
+- `Kesk Welcome` browser install flow for LibreWolf, Brave, Zen Browser, or Firefox fallback
 - custom SDDM, lock screen, and splash
 - custom wallpaper, HUD, and branding assets
 
@@ -142,9 +210,9 @@ This ISO line includes:
 
 - a real live desktop instead of the old script-only setup path
 - a themed Calamares installer
-- installer-time browser and software loadout selection
+- first-boot browser and optional software selection in `Kesk Welcome`
 - a seam-free custom window decoration path
-- launcher, browser, files, and terminal wired into the live session
+- launcher, files, and terminal wired into the live session
 - post-install user defaults and first-login polish
 - branded login, lock screen, splash, and browser home
 

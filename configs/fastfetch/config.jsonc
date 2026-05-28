@@ -46,7 +46,7 @@
   "modules": [
     {
       "type": "custom",
-      "format": "S.P.L.I.T. // SECURE TERMINAL"
+      "format": "KeskOS // SECURE TERMINAL"
     },
     {
       "type": "title",
@@ -91,7 +91,7 @@
     {
       "type": "custom",
       "key": "Terminal",
-      "format": "S.P.L.I.T. TERMINAL"
+      "format": "KeskOS Terminal"
     },
     "break",
     {

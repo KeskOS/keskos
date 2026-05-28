@@ -85,6 +85,7 @@ Supported browsers:
 
 Behavior:
 
+- fresh installs no longer assume any browser is preinstalled
 - detects installed browsers
 - uses `xdg-settings` / `xdg-mime` through the existing browser helper when setting defaults
 - applies the KeskOS homepage/theme through the existing browser helper when assets exist
@@ -94,6 +95,12 @@ Behavior:
 - never installs packages without confirmation
 
 If there is no internet uplink, the app still opens, but package installation stays unavailable.
+
+If the user skips the Browser page:
+
+- the Welcome flow still completes normally
+- the desktop remains usable
+- no browser may be installed yet until the user installs one later
 
 ## Network / Uplink
 
@@ -277,7 +284,7 @@ printf 'Hidden=true\n' >> ~/.config/autostart/kesk-welcome.desktop
 
 Kesk Welcome reuses existing KeskOS tools where possible:
 
-- browser helper from `kesk-settings-kcms`
+- browser helper from `keskos-settings`
 - `kesk settings`
 - `kesk doctor`
 - `kesk upgrade`
@@ -290,4 +297,4 @@ This app is a fork/adaptation of CachyOS Welcome.
 - upstream project: `CachyOS Welcome`
 - upstream repository: `https://github.com/CachyOS/CachyOS-Welcome`
 
-The original GPL license remains in `apps/kesk-welcome/LICENSE`.
+The original GPL license remains with the standalone `KeskOS/keskos-welcome` source repository, which is now the maintained package/app source of truth.

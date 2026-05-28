@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 from typing import Iterable, Sequence
 
-from common import KeskConsole, SessionLogger, shell_join, stream_command
+from common import KeskConsole, SessionLogger, branded_header_title, shell_join, stream_command
 
 
 STARTPAGE_URL = "file:///usr/share/keskos/startpage/index.html"
@@ -836,6 +836,10 @@ def quickshell_config_source_candidates(ctx: RepairContext) -> list[Path]:
     candidates = [
         ctx.usr_root / "local" / "share" / "keskos" / "source" / "configs" / "quickshell" / "keskos",
         Path("/usr/local/share/keskos/source/configs/quickshell/keskos"),
+        ctx.usr_root / "share" / "keskos" / "source" / "configs" / "quickshell" / "keskos",
+        Path("/usr/share/keskos/source/configs/quickshell/keskos"),
+        ctx.usr_root / "share" / "keskos" / "quickshell" / "keskos",
+        Path("/usr/share/keskos/quickshell/keskos"),
     ]
     if ctx.source_root:
         candidates.append(ctx.source_root / "configs" / "quickshell" / "keskos")
@@ -843,7 +847,11 @@ def quickshell_config_source_candidates(ctx: RepairContext) -> list[Path]:
 
 
 def browser_asset_source_candidates(ctx: RepairContext) -> list[Path]:
-    candidates = [ctx.usr_root / "share" / "keskos" / "startpage", ctx.usr_root / "share" / "keskos" / "browser-home"]
+    candidates = [
+        ctx.usr_root / "share" / "keskos" / "startpage",
+        ctx.usr_root / "share" / "keskos" / "browser" / "startpage",
+        ctx.usr_root / "share" / "keskos" / "browser-home",
+    ]
     if ctx.source_root:
         candidates.extend([ctx.source_root / "browser-home"])
     return candidates
@@ -1621,12 +1629,12 @@ def finalize_record(record: ActionRecord, exit_code: int) -> int:
 
 def action_header(console: KeskConsole, subtitle: str) -> None:
     console.clear()
-    console.header("KESK REPAIR CONSOLE", subtitle)
+    console.header(branded_header_title("Repair Console"), subtitle)
 
 
 def render_menu(console: KeskConsole, logger: SessionLogger) -> None:
     console.clear()
-    console.header("KESK REPAIR CONSOLE", "RESTORE DESKTOP STACK // THEME CHAIN // BOOT IDENTITY")
+    console.header(branded_header_title("Repair Console"), "RESTORE DESKTOP STACK // THEME CHAIN // BOOT IDENTITY")
     console.line()
     console.status("ok", f"session log: {logger.path}")
     console.line()
@@ -1862,7 +1870,7 @@ def perform_action(
 
 
 def print_help(console: KeskConsole) -> int:
-    console.header("KESK REPAIR CONSOLE", "SAFE BRANDED DESKTOP REPAIR")
+    console.header(branded_header_title("Repair Console"), "SAFE BRANDED DESKTOP REPAIR")
     console.line("Usage: kesk repair")
     console.line("       kesk repair --status --json")
     console.line("       kesk repair --safe|--panels|--launcher|--visual-identity|--plasma|--icons|--cursor")
@@ -2157,7 +2165,7 @@ def main(args: Sequence[str], root: Path) -> int:
     except Exception as exc:
         logger.log(f"final_status=error:{exc!r}")
         console.clear()
-        console.header("KESK REPAIR CONSOLE", "ERROR")
+        console.header(branded_header_title("Repair Console"), "ERROR")
         console.status("warn", f"repair failed: {exc}")
         return 1
     finally:

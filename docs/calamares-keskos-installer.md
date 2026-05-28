@@ -31,8 +31,8 @@ Calamares config:
 
 Build note:
 
-- `build.sh` still stages `librewolf-bin`, `zen-browser-bin`, and `brave-bin` into the ISO-local repository so the installed system and first-boot tooling have local browser packages available.
-- browser AUR builds use a temporary build-only GPG home under the safe build root; if a browser binary package still cannot verify its upstream key, the build retries that browser package with `--skippgpcheck` and prints a warning.
+- release `build.sh` runs now consume the published package set from the configured pacman repos instead of building duplicate local `keskos-*` package trees.
+- local override builds such as patched `calamares`, patched `systemsettings`, or browser AUR packages are available only in `KESKOS_BUILD_MODE=local-dev` with explicit opt-in flags.
 
 Calamares branding:
 
@@ -77,9 +77,10 @@ The interactive loadout pages are gone from Calamares. Instead, the hidden `kesk
 
 Default behavior in the current flow:
 
-- keeps a temporary default browser mapping for the installed system
-- keeps all staged browsers installed so `Kesk Welcome` can handle browser choice later
-- skips browser theme / startpage apply during Calamares
+- does not install browser packages during Calamares
+- defers browser selection and browser package installation to `Kesk Welcome`
+- skips browser theme / startpage apply during Calamares when no browser package is present
+- leaves HTTP/HTML browser defaults unset when the target system has no installed browser yet
 - applies required desktop defaults such as theme, layout, and SDDM branding automatically
 - preserves the normal install-choice JSON and package list outputs used by post-install hooks
 
@@ -113,7 +114,7 @@ Supported browser packages remain defined in:
 
 - `airootfs/usr/share/keskos/installer/package-manifest.json`
 
-The install still writes a default browser desktop entry into the target so links open cleanly before the user completes `Kesk Welcome`, but Calamares no longer asks the user to choose a browser and it no longer prunes the other staged browsers.
+That manifest is now used only as browser metadata for the installer handoff. Calamares no longer preinstalls those browser packages into the default ISO payload.
 
 ## Automatic Branding / Defaults
 
@@ -171,12 +172,10 @@ Run Calamares with debug logging:
 calamares -d
 ```
 
-Validate staged browser packages manually:
+Validate the first-boot browser flow manually:
 
 ```bash
-pacman -Si librewolf
-pacman -Si zen-browser
-pacman -Si brave-browser
+kesk welcome-rerun
 ```
 
 ## Extending The Installer

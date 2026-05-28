@@ -164,10 +164,10 @@ def first_existing_text(paths: list[Path], key: str) -> str:
 
 
 def release_metadata(target_root: Path) -> tuple[list[dict[str, str]], str]:
-    version_path = rooted_path(target_root, "/usr/share/kesk/version")
+    version_path = rooted_path(target_root, "/usr/lib/keskos/version")
     paths = [
+        rooted_path(target_root, "/etc/keskos-release"),
         rooted_path(target_root, "/etc/os-release"),
-        rooted_path(target_root, "/etc/kesk-release"),
         version_path,
     ]
     raw_version_lines = read_lines(version_path)
@@ -185,15 +185,14 @@ def first_release_value(release_maps: list[dict[str, str]], keys: list[str]) -> 
 
 def detect_keskos_version(target_root: Path) -> str | None:
     release_maps, raw_version_line = release_metadata(target_root)
-    version_name = first_release_value(release_maps, ["PRETTY_NAME", "NAME"])
-    version_id = first_release_value(release_maps, ["VERSION_ID", "VERSION", "LAYER", "BUILD_DATE", "BUILD_ID"])
+    version_name = first_release_value(release_maps, ["BRAND_LINE", "PRETTY_NAME", "NAME"])
+    version_id = first_release_value(release_maps, ["LAYER_NAME", "VERSION", "VERSION_ID", "LAYER", "BUILD_DATE", "BUILD_ID"])
 
-    if version_name and version_name.lower() not in {"keskos", "keskos live"}:
+    if version_name and version_name.lower() != "keskos":
         return sanitize_string(version_name)
 
     if version_id:
-        base_name = "KeskOS Live" if version_name.lower() == "keskos live" else "KeskOS"
-        return sanitize_string(f"{base_name} {version_id}")
+        return sanitize_string(f"KeskOS // {version_id}" if not version_name or version_name == "KeskOS" else f"{version_name} {version_id}")
 
     if version_name:
         return sanitize_string(version_name)
@@ -466,13 +465,14 @@ def redact_standalone_token(text: str, token: str, replacement: str) -> str:
 
 def sanitize_string(value: str) -> str:
     redacted = value
+    home_root = str(Path.home().parent)
     for username in usernames_to_redact():
         redacted = redact_standalone_token(redacted, username, "<user>")
     for hostname in hostnames_to_redact():
         redacted = redact_standalone_token(redacted, hostname, "<host>")
 
     patterns = [
-        (re.compile(r"/home/[^/\s]+"), "/home/<user>"),
+        (re.compile(rf"{re.escape(home_root)}/[^/\s]+"), f"{home_root}/<user>"),
         (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), "<ip>"),
         (re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b"), "<mac>"),
         (re.compile(r"\b[a-f0-9]{32}\b", re.IGNORECASE), "<id>"),

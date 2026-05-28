@@ -1,0 +1,21 @@
+# Required KeskOS packages for ISO builds
+keskos-release
+keskos-keyring
+keskos-mirrorlist
+keskos-tools
+keskos-branding
+keskos-theme
+keskos-settings
+keskos-welcome
+keskos-plasma-layout
+keskos-quickshell-hud
+keskos-kickoff
+keskos-workspace-switcher
+keskos-browser-startpage
+keskos-plymouth
+keskos-sddm-theme
+keskos-calamares-branding
+keskos-installer-debug-log
+keskos-core-meta
+keskos-desktop-meta
+keskos-system-tools-meta

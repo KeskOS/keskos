@@ -905,7 +905,7 @@ Config::genericWelcomeMessage() const
 
         auto* brandTitle = new QLabel( tr( "K E S K   O S", "@title" ), brandCard );
         brandTitle->setObjectName( "welcomeBrandTitle" );
-        auto* brandEdition = new QLabel( tr( "S.P.L.I.T. EDITION", "@info" ), brandCard );
+        auto* brandEdition = new QLabel( Calamares::Branding::instance()->version(), brandCard );
         brandEdition->setObjectName( "welcomeBrandMeta" );
         auto* brandTagline = new QLabel( tr( "BUILT DIFFERENT.", "@info" ), brandCard );
         brandTagline->setObjectName( "welcomeBrandMeta" );

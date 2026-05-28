@@ -68,7 +68,7 @@ Item {
 
     Text {
         anchors.centerIn: parent
-        text: "S.P.L.I.T. // SECURE TERMINAL"
+        text: "KeskOS // SECURE TERMINAL"
         color: theme.accent
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 13

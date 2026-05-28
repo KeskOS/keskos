@@ -5,6 +5,29 @@ log() {
   printf '[keskos-postinstall] %s\n' "$1"
 }
 
+source_branding_metadata() {
+  local helper="/usr/lib/keskos/branding.sh"
+
+  if [[ -r "$helper" ]]; then
+    # shellcheck disable=SC1090
+    . "$helper"
+  else
+    OS_NAME="KeskOS"
+    OS_PRETTY_NAME="KeskOS"
+    OS_LAYER=""
+    OS_LAYER_NAME=""
+    OS_BRAND_LINE="KeskOS"
+    OS_CHANNEL="stable"
+    OS_BUILD_ID="dev"
+    OS_ACCENT_COLOR="#ce6a35"
+    OS_HOME_URL="https://keskos.org"
+    OS_DOCUMENTATION_URL="https://docs.keskos.org"
+    OS_DOWNLOAD_URL="https://downloads.keskos.org"
+    OS_SUPPORT_URL="https://docs.keskos.org"
+    OS_BUG_REPORT_URL="https://github.com/KeskOS"
+  fi
+}
+
 ensure_pacman_mirrorlist() {
   mkdir -p /etc/pacman.d
 
@@ -18,8 +41,32 @@ Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
 EOF
 }
 
+write_keskos_repo_conf() {
+  mkdir -p /etc/pacman.d
+
+  if [[ -s /etc/pacman.d/keskos-mirrorlist ]]; then
+    cat >/etc/pacman.d/keskos.conf <<'EOF'
+[keskos]
+# TODO: switch this to `SigLevel = Required DatabaseOptional` once
+# `keskos-keyring` is published and the repo server signs packages + metadata.
+SigLevel = Optional TrustAll
+Include = /etc/pacman.d/keskos-mirrorlist
+EOF
+    return 0
+  fi
+
+  cat >/etc/pacman.d/keskos.conf <<'EOF'
+[keskos]
+# TODO: switch this to `SigLevel = Required DatabaseOptional` once
+# `keskos-keyring` is published and the repo server signs packages + metadata.
+SigLevel = Optional TrustAll
+Server = https://downloads.keskos.org/repo/$repo/os/$arch
+EOF
+}
+
 write_installed_pacman_conf() {
   ensure_pacman_mirrorlist
+  write_keskos_repo_conf
 
   cat >/etc/pacman.conf <<'EOF'
 [options]
@@ -29,6 +76,8 @@ CheckSpace
 ParallelDownloads = 5
 SigLevel = Required DatabaseOptional
 LocalFileSigLevel = Optional
+
+Include = /etc/pacman.d/keskos.conf
 
 [core]
 Include = /etc/pacman.d/mirrorlist
@@ -176,27 +225,38 @@ PY
 }
 
 write_installed_os_release() {
-  local build_id=""
+  local image_build_date=""
+  local version_value=""
+  local version_id=""
 
-  build_id="$(read_install_session_value iso_build_id || true)"
-  [[ -n "$build_id" ]] || build_id="rolling"
+  source_branding_metadata
+  image_build_date="$(read_install_session_value iso_build_id || true)"
+  [[ -n "$image_build_date" ]] || image_build_date="${OS_BUILD_ID:-dev}"
+  version_value="${OS_LAYER_NAME:-${OS_BRAND_LINE:-KeskOS}}"
+  version_id="${OS_LAYER:-${OS_BUILD_ID:-dev}}"
 
   cat >/etc/os-release <<EOF
 NAME="KeskOS"
-PRETTY_NAME="KeskOS"
-VERSION_ID="${build_id}"
-ID=arch
+PRETTY_NAME="${OS_BRAND_LINE:-KeskOS}"
+ID=keskos
 ID_LIKE=arch
-BUILD_ID="${build_id}"
-IMAGE_BUILD_DATE="${build_id}"
+VERSION="${version_value}"
+VERSION_ID="${version_id}"
+BUILD_ID="${OS_BUILD_ID:-dev}"
+IMAGE_BUILD_DATE="${image_build_date}"
 ANSI_COLOR="38;2;206;106;53"
-HOME_URL="https://github.com/memegeko/keskos"
-DOCUMENTATION_URL="https://github.com/memegeko/keskos"
-SUPPORT_URL="https://github.com/memegeko/keskos/issues"
-BUG_REPORT_URL="https://github.com/memegeko/keskos/issues"
-PRIVACY_POLICY_URL="https://github.com/memegeko/keskos"
-LOGO=archlinux-logo
+HOME_URL="${OS_HOME_URL:-https://keskos.org}"
+DOCUMENTATION_URL="${OS_DOCUMENTATION_URL:-https://docs.keskos.org}"
+SUPPORT_URL="${OS_SUPPORT_URL:-https://docs.keskos.org}"
+BUG_REPORT_URL="${OS_BUG_REPORT_URL:-https://github.com/KeskOS}"
+LOGO=keskos
 EOF
+}
+
+refresh_branding_runtime() {
+  if [[ -x /usr/bin/kesk ]]; then
+    /usr/bin/kesk refresh-branding >/dev/null 2>&1 || true
+  fi
 }
 
 apply_kcm_cleanup_defaults() {
@@ -247,7 +307,11 @@ EOF
   if id -u liveuser >/dev/null 2>&1; then
     userdel -r liveuser >/dev/null 2>&1 || true
   else
-    rm -rf /home/liveuser
+    local liveuser_home=""
+    liveuser_home="$(getent passwd liveuser | cut -d: -f6)"
+    if [[ -n "$liveuser_home" ]]; then
+      rm -rf "$liveuser_home"
+    fi
   fi
 
   if command -v pacman >/dev/null 2>&1 && pacman -Qq mkinitcpio-archiso >/dev/null 2>&1; then
@@ -278,6 +342,7 @@ main() {
   target_user="$(detect_target_user || true)"
   log "Applying KeskOS deployment defaults."
   apply_install_choices "$target_user"
+  refresh_branding_runtime
   log "Recording install report source data."
   record_install_report_source
   log "Sending install report for successful install."

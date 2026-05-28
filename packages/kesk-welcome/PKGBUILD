@@ -1,48 +1,14 @@
 pkgname=kesk-welcome
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="KeskOS first-boot welcome app"
-arch=(x86_64 aarch64)
+pkgdesc="Compatibility package that installs the new keskos-welcome package"
+arch=(any)
 url="https://github.com/memegeko/keskos"
 license=(GPL-3.0-or-later)
-depends=(
-  gtk3
-  konsole
-  kesk-settings-kcms
-  python
-  xdg-utils
-)
-makedepends=(
-  cargo
-  pkgconf
-  rust
-)
+depends=(keskos-welcome)
 source=()
 sha256sums=()
 
-resolve_app_dir() {
-  if [[ -d "${startdir}/app" ]]; then
-    printf '%s\n' "${startdir}/app"
-    return 0
-  fi
-
-  printf '%s\n' "$(cd "${startdir}/../../apps/kesk-welcome" && pwd)"
-}
-
-build() {
-  local app_dir
-  app_dir="$(resolve_app_dir)"
-  cd "${app_dir}"
-  CARGO_TARGET_DIR="${srcdir}/target" cargo build --release --locked
-}
-
 package() {
-  local app_dir
-  app_dir="$(resolve_app_dir)"
-  cd "${app_dir}"
-
-  install -Dm755 "${srcdir}/target/release/kesk-welcome" "${pkgdir}/usr/bin/kesk-welcome"
-  install -Dm644 "packaging/kesk-welcome.desktop" "${pkgdir}/usr/share/applications/kesk-welcome.desktop"
-  install -Dm644 "packaging/kesk-welcome-autostart.desktop" "${pkgdir}/etc/xdg/autostart/kesk-welcome.desktop"
-  install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  :
 }

@@ -1,15 +1,46 @@
 .codex
 KeskOrange.colors
 keskosbackground.png
-__pycache__/
-*.pyc
-work/
-out/
+
+# Local archives and experiments
 .old_rolfi
 .old_experiments
-/docs/website-content
 .themes
+/docs/website-content
+
+# Build roots and caches
+work/
+out/
+cache/
+localrepo/
+repo-output/
+.cache/
+__pycache__/
+target/
+node_modules/
+
+# Package build outputs
+pkg/
+src/
 packages/*/pkg/
 packages/*/src/
 packages/*/modules/build/
-packages/*/*.pkg.tar.zst
+*.pkg.tar
+*.pkg.tar.*
+*.pkg.tar.zst
+*.pkg.tar.zst.sig
+*.pkg.tar.xz
+*.sig
+*.db
+*.db.tar.gz
+*.files
+*.files.tar.gz
+
+# ISO artifacts
+*.iso
+*.iso.sig
+
+# Python / logs
+*.pyc
+*.pyo
+*.log

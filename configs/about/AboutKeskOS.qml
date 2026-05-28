@@ -8,7 +8,7 @@ Window {
     height: 440
     visible: true
     color: "#050505"
-    title: "ABOUT KESKOS"
+    title: "__KESKOS_WINDOW_TITLE__"
 
     Rectangle {
         anchors.fill: parent
@@ -46,7 +46,7 @@ Window {
     Text {
         anchors.horizontalCenter: parent.horizontalCenter
         y: 72
-        text: "K E S K   O S"
+        text: "__KESKOS_NAME_SPACED__"
         color: "#ce6a35"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 34
@@ -57,7 +57,7 @@ Window {
     Text {
         anchors.horizontalCenter: parent.horizontalCenter
         y: 136
-        text: "S.P.L.I.T. EDITION"
+        text: "__KESKOS_LAYER_TITLE__"
         color: "#b8afa6"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 17
@@ -68,7 +68,7 @@ Window {
     Text {
         anchors.horizontalCenter: parent.horizontalCenter
         y: 170
-        text: "BUILT DIFFERENT."
+        text: "__KESKOS_BRAND_LINE__"
         color: "#8f8a84"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 15
@@ -92,10 +92,12 @@ Window {
 
         Repeater {
             model: [
-                "VERSION: 1.0-SPLIT",
-                "CODENAME: STATIC",
-                "ARCHITECTURE: x86_64",
-                "KERNEL: 6.6.12-kesk"
+                "OS: __KESKOS_BRAND_LINE__",
+                "LAYER: __KESKOS_LAYER_LINE__",
+                "CHANNEL: __KESKOS_CHANNEL__",
+                "BUILD: __KESKOS_BUILD_ID__",
+                "ARCHITECTURE: __KESKOS_ARCH__",
+                "KERNEL: __KESKOS_KERNEL__"
             ]
 
             Text {
@@ -113,7 +115,7 @@ Window {
     Text {
         anchors.horizontalCenter: parent.horizontalCenter
         y: root.height - 52
-        text: "\u00a9 2024 KESK INDUSTRIES"
+        text: "\u00a9 __KESKOS_COPY_YEAR__ KESKOS"
         color: "#8f8a84"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 13

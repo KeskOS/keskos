@@ -6,24 +6,25 @@ import subprocess
 import sys
 from typing import Sequence
 
-from common import APP_VERSION, KeskConsole
+from common import APP_VERSION, KeskConsole, branded_header_title, branding_version_rows, load_branding
 
 
 HELP_ROWS = (
     ("kesk help", "Show the command router help."),
-    ("kesk version", "Show the current Kesk tool version."),
+    ("kesk version", "Show the current KeskOS release branding."),
     ("kesk upgrade", "Update KeskOS packages."),
     ("kesk doctor", "Check system health."),
     ("kesk repair", "Repair KeskOS desktop and theme stack."),
     ("kesk settings", "Open KDE System Settings with KeskOS branding."),
     ("kesk welcome", "Open Kesk Welcome manually."),
     ("kesk welcome-rerun", "Open Kesk Welcome even when the first-run marker exists."),
+    ("kesk refresh-branding", "Refresh KeskOS branding metadata and os-release."),
 )
 
 
 def show_help(console: KeskConsole, error: str | None = None) -> int:
     console.clear()
-    console.header("KESK SYSTEM TOOLS", "BASE COMMAND ROUTER")
+    console.header(branded_header_title("Command Router"), "BASE COMMAND ROUTER")
     if error:
         console.status("warn", error)
         console.line()
@@ -34,7 +35,11 @@ def show_help(console: KeskConsole, error: str | None = None) -> int:
 
 
 def show_version(console: KeskConsole) -> int:
-    console.line(f"kesk {APP_VERSION}")
+    branding = load_branding()
+    console.line(branding.brand_line)
+    for label, value in branding_version_rows()[1:]:
+        console.line(f"{label}: {value}")
+    console.line(f"Tool version: {APP_VERSION}")
     return 0
 
 
@@ -52,6 +57,7 @@ def main(args: Sequence[str], root: Path) -> int:
     repair_path = root / "commands" / "repair"
     settings_path = root / "commands" / "settings"
     welcome_path = root / "commands" / "welcome"
+    refresh_branding_path = root / "commands" / "refresh-branding"
 
     if not args:
         return show_help(console)
@@ -70,6 +76,8 @@ def main(args: Sequence[str], root: Path) -> int:
             return exec_command(settings_path, ["--help"])
         if extra_args and extra_args[0] == "welcome" and welcome_path.exists():
             return exec_command(welcome_path, ["--help"])
+        if extra_args and extra_args[0] == "refresh-branding" and refresh_branding_path.exists():
+            return exec_command(refresh_branding_path, ["--help"])
         return show_help(console)
 
     if command in {"version", "--version", "-V"}:
@@ -104,5 +112,10 @@ def main(args: Sequence[str], root: Path) -> int:
         if not welcome_path.exists():
             return show_help(console, "welcome command is missing from /usr/lib/kesk/commands.")
         return exec_command(welcome_path, ["--rerun", *extra_args])
+
+    if command == "refresh-branding":
+        if not refresh_branding_path.exists():
+            return show_help(console, "refresh-branding command is missing from /usr/lib/kesk/commands.")
+        return exec_command(refresh_branding_path, extra_args)
 
     return show_help(console, f"unknown command: {command}")

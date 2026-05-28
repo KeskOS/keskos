@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
+import importlib.util
+import json
 from pathlib import Path
 import os
 import shlex
@@ -28,8 +31,9 @@ except ImportError:  # pragma: no cover - fallback path
     box = None
     rich_escape = None
 
-ACCENT_HEX = "#ce6a35"
 APP_VERSION = "0.1.0"
+BRANDING_HELPER_PATH = Path("/usr/lib/keskos/branding.py")
+DEFAULT_ACCENT_HEX = "#ce6a35"
 
 STATUS_PREFIXES = {
     "ok": "[ OK ]",
@@ -37,6 +41,155 @@ STATUS_PREFIXES = {
     "work": "[ .. ]",
     "skip": "[ -- ]",
 }
+
+
+@dataclass(frozen=True)
+class Branding:
+    name: str = "KeskOS"
+    pretty_name: str = "KeskOS"
+    layer: str = ""
+    layer_name: str = ""
+    brand_line: str = "KeskOS"
+    channel: str = "stable"
+    build_id: str = "dev"
+    accent_color: str = DEFAULT_ACCENT_HEX
+    home_url: str = "https://keskos.org"
+    documentation_url: str = "https://docs.keskos.org"
+    download_url: str = "https://downloads.keskos.org"
+    support_url: str = "https://docs.keskos.org"
+    bug_report_url: str = "https://github.com/KeskOS"
+
+    def as_json(self) -> dict[str, str]:
+        return {
+            "name": self.name,
+            "pretty_name": self.pretty_name,
+            "layer": self.layer,
+            "layer_name": self.layer_name,
+            "brand_line": self.brand_line,
+            "channel": self.channel,
+            "build_id": self.build_id,
+            "accent_color": self.accent_color,
+            "home_url": self.home_url,
+            "documentation_url": self.documentation_url,
+            "download_url": self.download_url,
+            "support_url": self.support_url,
+            "bug_report_url": self.bug_report_url,
+        }
+
+
+_branding_cache: Branding | None = None
+
+
+def _normalize_branding(payload: dict[str, object]) -> Branding:
+    name = str(payload.get("name") or "KeskOS").strip() or "KeskOS"
+    layer = str(payload.get("layer") or "").strip()
+    layer_name = str(payload.get("layer_name") or "").strip()
+    brand_line = str(payload.get("brand_line") or "").strip()
+    pretty_name = str(payload.get("pretty_name") or "").strip()
+
+    if not layer_name and layer:
+        layer_name = f"Layer {layer}"
+    if not brand_line:
+        brand_line = pretty_name or name
+    if not pretty_name:
+        pretty_name = brand_line or name
+
+    return Branding(
+        name=name,
+        pretty_name=pretty_name or "KeskOS",
+        layer=layer,
+        layer_name=layer_name,
+        brand_line=brand_line or name,
+        channel=str(payload.get("channel") or "stable").strip() or "stable",
+        build_id=str(payload.get("build_id") or "dev").strip() or "dev",
+        accent_color=str(payload.get("accent_color") or DEFAULT_ACCENT_HEX).strip() or DEFAULT_ACCENT_HEX,
+        home_url=str(payload.get("home_url") or "https://keskos.org").strip() or "https://keskos.org",
+        documentation_url=str(payload.get("documentation_url") or "https://docs.keskos.org").strip()
+        or "https://docs.keskos.org",
+        download_url=str(payload.get("download_url") or "https://downloads.keskos.org").strip()
+        or "https://downloads.keskos.org",
+        support_url=str(payload.get("support_url") or "https://docs.keskos.org").strip() or "https://docs.keskos.org",
+        bug_report_url=str(payload.get("bug_report_url") or "https://github.com/KeskOS").strip()
+        or "https://github.com/KeskOS",
+    )
+
+
+def _load_branding_from_helper() -> Branding | None:
+    if not BRANDING_HELPER_PATH.is_file():
+        return None
+
+    spec = importlib.util.spec_from_file_location("keskos_branding", BRANDING_HELPER_PATH)
+    if spec is None or spec.loader is None:
+        return None
+
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        return None
+
+    load_branding = getattr(module, "load_branding", None)
+    if callable(load_branding):
+        try:
+            branding = load_branding()
+        except Exception:
+            branding = None
+        if branding is not None:
+            return _normalize_branding(getattr(branding, "__dict__", {}))
+
+    payload: dict[str, object] = {}
+    for attr, field_name in (
+        ("OS_NAME", "name"),
+        ("OS_PRETTY_NAME", "pretty_name"),
+        ("OS_LAYER", "layer"),
+        ("OS_LAYER_NAME", "layer_name"),
+        ("OS_BRAND_LINE", "brand_line"),
+        ("OS_CHANNEL", "channel"),
+        ("OS_BUILD_ID", "build_id"),
+        ("OS_ACCENT_COLOR", "accent_color"),
+        ("OS_HOME_URL", "home_url"),
+        ("OS_DOCUMENTATION_URL", "documentation_url"),
+        ("OS_DOWNLOAD_URL", "download_url"),
+        ("OS_SUPPORT_URL", "support_url"),
+        ("OS_BUG_REPORT_URL", "bug_report_url"),
+    ):
+        value = getattr(module, attr, None)
+        if isinstance(value, str) and value.strip():
+            payload[field_name] = value.strip()
+
+    return _normalize_branding(payload) if payload else None
+
+
+def load_branding(force_reload: bool = False) -> Branding:
+    global _branding_cache
+
+    if _branding_cache is not None and not force_reload:
+        return _branding_cache
+
+    branding = _load_branding_from_helper()
+    if branding is None:
+        branding = Branding()
+
+    _branding_cache = branding
+    return branding
+
+
+def branded_header_title(suffix: str) -> str:
+    brand_line = load_branding().brand_line.strip() or "KeskOS"
+    return f"{brand_line} {suffix}".strip()
+
+
+def branding_version_rows() -> list[tuple[str, str]]:
+    branding = load_branding()
+    return [
+        ("OS", branding.brand_line),
+        ("Layer", branding.layer or "unavailable"),
+        ("Channel", branding.channel),
+        ("Build", branding.build_id),
+    ]
+
+
+ACCENT_HEX = load_branding().accent_color or DEFAULT_ACCENT_HEX
 
 
 def shell_join(command: Sequence[str]) -> str:

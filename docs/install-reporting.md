@@ -190,7 +190,7 @@ For end users:
 
 For distro builders or local forks:
 
-- remove or replace the final-page report UI in `apps/kesk-welcome/src/main.rs`
+- remove or replace the final-page report UI in the standalone `KeskOS/keskos-welcome` source tree
 - remove or replace `airootfs/usr/lib/kesk/install_report.py`
 - remove the installer-side source capture if reporting is not wanted
 

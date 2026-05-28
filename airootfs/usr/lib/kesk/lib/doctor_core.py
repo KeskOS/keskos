@@ -11,7 +11,7 @@ import socket
 import subprocess
 from typing import Iterable, Sequence
 
-from common import KeskConsole, SessionLogger, log_dir_candidates, shell_join
+from common import KeskConsole, SessionLogger, branded_header_title, load_branding, log_dir_candidates, shell_join
 
 PACMAN_DB_PATH = Path(os.environ.get("KESK_PACMAN_DB_PATH", "/var/lib/pacman"))
 PACMAN_LOCK_PATH = Path(os.environ.get("KESK_PACMAN_LOCK_PATH", "/var/lib/pacman/db.lck"))
@@ -55,6 +55,8 @@ QUICKSHELL_CONFIG_PATHS = (
     HOME_PATH / ".config" / "quickshell" / "keskos",
     Path("/etc/xdg/quickshell"),
     Path("/usr/local/share/keskos/source/configs/quickshell/keskos"),
+    Path("/usr/share/keskos/source/configs/quickshell/keskos"),
+    Path("/usr/share/keskos/quickshell/keskos"),
     Path("/usr/share/kesk/quickshell"),
 )
 PLASMA_CONFIG_PATHS = (
@@ -1044,36 +1046,19 @@ def scan_reboot(state: DoctorState) -> None:
 
 
 def scan_version_info(state: DoctorState) -> None:
-    os_release = read_key_value_file(Path("/etc/os-release"))
-    kesk_release = read_key_value_file(Path("/etc/kesk-release"))
-    kesk_version = read_key_value_file(Path("/usr/share/kesk/version"))
-    raw_version_line = read_first_line(Path("/usr/share/kesk/version"))
-
-    version_name = (
-        os_release.get("PRETTY_NAME")
-        or kesk_release.get("PRETTY_NAME")
-        or kesk_release.get("NAME")
-        or kesk_version.get("PRETTY_NAME")
-        or raw_version_line
-        or "unknown"
-    )
-    build_id = (
-        os_release.get("BUILD_ID")
-        or kesk_release.get("BUILD_ID")
-        or kesk_release.get("LAYER")
-        or kesk_version.get("BUILD_ID")
-        or kesk_version.get("VERSION")
-        or "unknown"
-    )
+    branding = load_branding()
 
     plasma_version = command_version(["plasmashell", "--version"]) if command_exists("plasmashell") else "unavailable"
     frameworks_version = command_version(["kf6-config", "--version"]) if command_exists("kf6-config") else "unavailable"
     qt_version = detect_qt_version()
+    kernel = detect_kernel()
 
     state.version_info = [
-        ("KeskOS version", version_name),
-        ("Build layer", build_id),
-        ("Kernel", detect_kernel()),
+        ("OS", branding.brand_line),
+        ("Layer", branding.layer_name or branding.layer or "unavailable"),
+        ("Channel", branding.channel),
+        ("Build", branding.build_id),
+        ("Kernel", kernel),
         ("Desktop session", os.environ.get("DESKTOP_SESSION", "unavailable")),
         ("Current desktop", os.environ.get("XDG_CURRENT_DESKTOP", "unavailable")),
         ("Plasma version", plasma_version),
@@ -1081,9 +1066,11 @@ def scan_version_info(state: DoctorState) -> None:
         ("Qt version", qt_version),
     ]
 
-    add_result(state, "BUILD INFO", "ok", f"KeskOS version: {version_name}")
-    add_result(state, "BUILD INFO", "ok", f"build layer: {build_id}")
-    add_result(state, "BUILD INFO", "ok", f"kernel: {detect_kernel()}")
+    add_result(state, "BUILD INFO", "ok", f"os: {branding.brand_line}")
+    add_result(state, "BUILD INFO", "ok", f"layer: {branding.layer_name or branding.layer or 'unavailable'}")
+    add_result(state, "BUILD INFO", "ok", f"channel: {branding.channel}")
+    add_result(state, "BUILD INFO", "ok", f"build: {branding.build_id}")
+    add_result(state, "BUILD INFO", "ok", f"kernel: {kernel}")
     if plasma_version != "unavailable":
         add_result(state, "BUILD INFO", "ok", plasma_version)
     else:
@@ -1248,7 +1235,7 @@ def refresh_state(logger: SessionLogger) -> DoctorState:
 
 def render_dashboard(console: KeskConsole, state: DoctorState, logger: SessionLogger) -> None:
     console.clear()
-    console.header("KESK SYSTEM DOCTOR", "SYSTEM INTEGRITY // DESKTOP STACK // UPDATE CHANNELS")
+    console.header(branded_header_title("System Doctor"), "SYSTEM INTEGRITY // DESKTOP STACK // UPDATE CHANNELS")
     console.line()
     for section in state.section_order:
         for line in state.sections[section]:
@@ -1269,7 +1256,7 @@ def render_dashboard(console: KeskConsole, state: DoctorState, logger: SessionLo
 
 def render_detailed_report(console: KeskConsole, state: DoctorState) -> None:
     console.clear()
-    console.header("KESK SYSTEM DOCTOR", "DETAILED REPORT")
+    console.header(branded_header_title("System Doctor"), "DETAILED REPORT")
 
     for section in state.section_order:
         console.section(section)
@@ -1546,7 +1533,7 @@ def open_logs_directory(console: KeskConsole, state: DoctorState, logger: Sessio
 
 
 def print_help(console: KeskConsole) -> int:
-    console.header("KESK SYSTEM DOCTOR", "READ-ONLY SYSTEM HEALTH CHECKER")
+    console.header(branded_header_title("System Doctor"), "READ-ONLY SYSTEM HEALTH CHECKER")
     console.line("Usage: kesk doctor")
     console.line("       kesk doctor --json")
     console.line("       kesk doctor --export [--json]")
@@ -1555,7 +1542,7 @@ def print_help(console: KeskConsole) -> int:
     console.line("- package manager state and update tools")
     console.line("- SDDM, Plymouth, Plasma, launcher, Quickshell, and browser assets")
     console.line("- failed services, disk usage, network reachability, and reboot recommendation")
-    console.line("- KeskOS version, build info, and current logs")
+    console.line("- KeskOS branding, build info, and current logs")
     return 0
 
 
@@ -1632,7 +1619,7 @@ def main(args: Sequence[str], _root: Path) -> int:
     except Exception as exc:
         logger.log(f"final_status=error:{exc!r}")
         console.clear()
-        console.header("KESK SYSTEM DOCTOR", "ERROR")
+        console.header(branded_header_title("System Doctor"), "ERROR")
         console.status("warn", f"doctor failed: {exc}")
         return 1
     finally:

@@ -5,6 +5,64 @@
 Active in-progress KeskOS beta work now lands on `beta-development` first.
 Use that branch for the current updater, installer, and desktop integration pass.
 
+## 2026-05-28
+
+### Repo-first ISO cleanup and package-source transition
+
+KeskOS continued the move away from duplicated in-repo package/app sources and toward published `keskos-*` packages from the pacman repo.
+
+### Added
+
+- `build.sh --check` and `KESKOS_BUILD_CHECK_ONLY=1` for safe preflight validation without starting `mkarchiso`
+- `scripts/check-repo-cleanliness.sh` for quick seed, artifact, and duplicate-file checks
+- `docs/repo-cleanup-report.md` for removed, kept, and manual-review items in the ISO repo
+- `docs/iso-package-strategy.md` updates for the repo-first build model and local override rules
+
+### Central branding metadata and dynamic layer branding
+
+KeskOS now has a central release-branding path so visible product naming can change through package upgrades instead of app-by-app string edits.
+
+### Added
+
+- `/etc/keskos-release` and `/usr/lib/keskos/branding.json` as the shared release-branding source of truth
+- reusable branding helpers in `keskos-release`
+- `kesk refresh-branding` and a pacman hook to refresh runtime branding metadata after updates
+- `scripts/check-branding.sh` for hardcoded-branding regression checks
+- `docs/branding-strategy.md` for the new branding flow and update model
+
+### Changed
+
+- updated `Kesk Welcome`, `Kesk Settings`, and the `kesk` CLI stack to read branding from central metadata
+- switched browser startpage branding to metadata-driven refreshable values
+- made live ISO fallback copies use the same generic or metadata-driven branding path where needed
+- simplified static SDDM, fastfetch, Quickshell, and Calamares text so old edition labels are no longer baked into multiple trees
+
+### Fixed
+
+- fixed the branding upgrade path so moving from `Layer 4` to `Layer 5` can happen through `keskos-release`
+- fixed installed-system `/etc/os-release` generation so `ID=keskos` stays stable while visible naming stays updateable
+
+### Changed
+
+- made `KESKOS_BUILD_MODE=release` the default repo-first build path
+- limited `[keskos-local]` usage to explicit `local-dev` override workflows
+- switched the normal ISO path to expect required `keskos-*` packages from `[keskos]` instead of building duplicate local source trees
+- updated README and package-strategy docs to describe release mode, local-dev mode, and first-boot browser install through `Kesk Welcome`
+- kept browser setup helper assets in the ISO while leaving full browser installation to post-install Welcome flow
+
+### Removed
+
+- removed duplicate local package/app source trees that are now maintained in their own package repos
+- removed stale generated outputs and repo clutter from the tracked tree
+- removed default ISO browser payload entries for `brave-bin`, `librewolf-bin`, and `zen-browser-bin`
+- removed `keskos-browsers-meta` from the ISO seed until it stops pulling a full browser back into the image
+
+### Fixed
+
+- fixed the release build path so missing required repo packages now fail earlier with clearer validation output
+- fixed the default build behavior so browser package builds and local override package builds no longer run implicitly
+- fixed top-level docs so they match the current pacman-repo-first architecture instead of the older local-source model
+
 ## 2026-05-18
 
 ### Beta branch updater, pacman repair, and panel cleanup fixes
