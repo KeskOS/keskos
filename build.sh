@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT="$(cd "${REPO_ROOT}/.." && pwd)"
 OUT_DIR="${REPO_ROOT}/out"
 SAFE_BUILD_ROOT="/tmp/keskos-build-${UID}"
 WORK_ROOT="${SAFE_BUILD_ROOT}/work"
@@ -16,6 +17,13 @@ SOURCE_DATE="${SOURCE_DATE_EPOCH:-$(date +%s)}"
 ISO_VERSION="${KESKOS_ISO_VERSION:-$(date --date="@${SOURCE_DATE}" +%Y.%m.%d)}"
 AUR_PACKAGES=(calamares librewolf-bin zen-browser-bin brave-bin)
 SKIP_PGP_FALLBACK_PACKAGES=(librewolf-bin zen-browser-bin brave-bin)
+USE_LOCAL_PACKAGES=0
+LOCAL_PACKAGE_DIRS_RAW="${KESKOS_LOCAL_PACKAGE_DIRS:-}"
+LOCAL_INSTALL_PACKAGES_RAW="${KESKOS_LOCAL_INSTALL_PACKAGES:-}"
+LOCAL_PACKAGE_DIR_OVERRIDES=()
+LOCAL_INSTALL_PACKAGE_OVERRIDES=()
+LOCAL_PACKAGE_DIRS=()
+LOCAL_INSTALL_PACKAGES=()
 
 log() {
   printf '[keskos-build] %s\n' "$1"
@@ -42,6 +50,86 @@ array_contains() {
   done
 
   return 1
+}
+
+split_colon_list() {
+  local raw_value="$1"
+  local output_name="$2"
+  local -n output_ref="$output_name"
+  local item=""
+  local -a parsed=()
+
+  output_ref=()
+  [[ -n "$raw_value" ]] || return 0
+
+  IFS=':' read -r -a parsed <<<"$raw_value"
+  for item in "${parsed[@]}"; do
+    [[ -n "$item" ]] || continue
+    output_ref+=("$item")
+  done
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --use-local-packages)
+        USE_LOCAL_PACKAGES=1
+        shift
+        ;;
+      --local-package-dir)
+        [[ $# -ge 2 ]] || fail "--local-package-dir requires a directory path"
+        LOCAL_PACKAGE_DIR_OVERRIDES+=("$2")
+        USE_LOCAL_PACKAGES=1
+        shift 2
+        ;;
+      --local-install-package)
+        [[ $# -ge 2 ]] || fail "--local-install-package requires a package name"
+        LOCAL_INSTALL_PACKAGE_OVERRIDES+=("$2")
+        USE_LOCAL_PACKAGES=1
+        shift 2
+        ;;
+      *)
+        fail "Unknown argument: $1"
+        ;;
+    esac
+  done
+}
+
+configure_local_package_mode() {
+  if [[ "$USE_LOCAL_PACKAGES" -ne 1 ]]; then
+    return 0
+  fi
+
+  if (( ${#LOCAL_PACKAGE_DIR_OVERRIDES[@]} > 0 )); then
+    LOCAL_PACKAGE_DIRS=("${LOCAL_PACKAGE_DIR_OVERRIDES[@]}")
+  elif [[ -n "$LOCAL_PACKAGE_DIRS_RAW" ]]; then
+    split_colon_list "$LOCAL_PACKAGE_DIRS_RAW" LOCAL_PACKAGE_DIRS
+  else
+    LOCAL_PACKAGE_DIRS=(
+      "${WORKSPACE_ROOT}/keskos-desktop/dist"
+      "${WORKSPACE_ROOT}/keskos-calamares-branding"
+      "${WORKSPACE_ROOT}/keskos-installer-debug-log"
+      "${WORKSPACE_ROOT}/keskos-desktop-meta"
+      "${WORKSPACE_ROOT}/keskos-release"
+      "${WORKSPACE_ROOT}/keskos-settings"
+      "${WORKSPACE_ROOT}/keskos-tools"
+      "${WORKSPACE_ROOT}/keskos-welcome"
+    )
+  fi
+
+  if (( ${#LOCAL_INSTALL_PACKAGE_OVERRIDES[@]} > 0 )); then
+    LOCAL_INSTALL_PACKAGES=("${LOCAL_INSTALL_PACKAGE_OVERRIDES[@]}")
+  elif [[ -n "$LOCAL_INSTALL_PACKAGES_RAW" ]]; then
+    split_colon_list "$LOCAL_INSTALL_PACKAGES_RAW" LOCAL_INSTALL_PACKAGES
+  else
+    LOCAL_INSTALL_PACKAGES=(
+      "keskos-calamares-branding"
+      "keskos-installer-debug-log"
+      "keskos-desktop-meta"
+    )
+  fi
+
+  log "Local package install mode enabled."
 }
 
 cleanup_safe_build_root() {
@@ -113,6 +201,11 @@ prepare_workdirs() {
   if [[ "$REPO_ROOT" == *" "* ]]; then
     log "Repo path contains spaces; staging Archiso and AUR builds outside the repo to avoid makepkg/CMake and chroot path issues."
   fi
+}
+
+package_name_from_archive() {
+  local archive_path="$1"
+  bsdtar -xOf "$archive_path" .PKGINFO 2>/dev/null | awk -F ' = ' '$1 == "pkgname" { print $2; exit }'
 }
 
 init_build_keyring() {
@@ -294,10 +387,49 @@ PY
   find "$AUR_PKGDEST" -maxdepth 1 -type f -name "${package_name}-*.pkg.tar.*" -exec cp -f {} "$LOCAL_REPO_DIR/" \;
 }
 
+stage_local_package_archives() {
+  local package_dir=""
+  local archive_path=""
+  local package_name=""
+  local required_name=""
+  local staged_count=0
+  local -a staged_package_names=()
+
+  [[ "$USE_LOCAL_PACKAGES" -eq 1 ]] || return 0
+
+  log "Staging local KeskOS package archives into the ISO-local repository..."
+  for package_dir in "${LOCAL_PACKAGE_DIRS[@]}"; do
+    if [[ ! -d "$package_dir" ]]; then
+      warn "Local package directory not found: ${package_dir}"
+      continue
+    fi
+
+    while IFS= read -r archive_path; do
+      [[ -n "$archive_path" ]] || continue
+      cp -f "$archive_path" "$LOCAL_REPO_DIR/"
+      package_name="$(package_name_from_archive "$archive_path" || true)"
+      [[ -n "$package_name" ]] && staged_package_names+=("$package_name")
+      ((staged_count += 1))
+    done < <(find "$package_dir" -maxdepth 1 -type f -name '*.pkg.tar.*' ! -name '*.sig' | sort)
+  done
+
+  (( staged_count > 0 )) || fail "Local package mode was enabled but no local package archives were found. Build the package repos first or pass --local-package-dir / KESKOS_LOCAL_PACKAGE_DIRS."
+
+  for required_name in "${LOCAL_INSTALL_PACKAGES[@]}"; do
+    if ! array_contains "$required_name" "${staged_package_names[@]}"; then
+      fail "Local package mode expected package '${required_name}' in the staged local archives, but it was not found. Check your local builds or override the package set with --local-install-package / KESKOS_LOCAL_INSTALL_PACKAGES."
+    fi
+  done
+}
+
 refresh_local_repo() {
+  local -a repo_archives=()
+
   log "Refreshing the local pacman repository..."
   rm -f "${LOCAL_REPO_DIR}"/keskos-local.db* "${LOCAL_REPO_DIR}"/keskos-local.files*
-  repo-add "${LOCAL_REPO_DIR}/keskos-local.db.tar.gz" "${LOCAL_REPO_DIR}"/*.pkg.tar.*
+  mapfile -t repo_archives < <(find "${LOCAL_REPO_DIR}" -maxdepth 1 -type f -name '*.pkg.tar.*' ! -name '*.sig' | sort)
+  (( ${#repo_archives[@]} > 0 )) || fail "No package archives were staged into ${LOCAL_REPO_DIR}"
+  repo-add "${LOCAL_REPO_DIR}/keskos-local.db.tar.gz" "${repo_archives[@]}"
 }
 
 generate_pacman_conf() {
@@ -309,13 +441,25 @@ generate_pacman_conf() {
 }
 
 stage_profile_basics() {
+  local package_name=""
+  local staged_packages_file="${STAGE_DIR}/packages.x86_64"
+
   log "Staging the Archiso profile..."
   cp -a "${REPO_ROOT}/airootfs" "${STAGE_DIR}/"
   cp -a "${REPO_ROOT}/grub" "${STAGE_DIR}/"
   cp -a "${REPO_ROOT}/syslinux" "${STAGE_DIR}/"
   cp -a "${REPO_ROOT}/efiboot" "${STAGE_DIR}/"
   install -m 644 "${REPO_ROOT}/profiledef.sh" "${STAGE_DIR}/profiledef.sh"
-  install -m 644 "${REPO_ROOT}/packages.x86_64" "${STAGE_DIR}/packages.x86_64"
+  install -m 644 "${REPO_ROOT}/packages.x86_64" "${staged_packages_file}"
+
+  if [[ "$USE_LOCAL_PACKAGES" -eq 1 ]]; then
+    log "Appending local install packages to the live package seed..."
+    for package_name in "${LOCAL_INSTALL_PACKAGES[@]}"; do
+      if ! grep -qxF "$package_name" "${staged_packages_file}"; then
+        printf '%s\n' "$package_name" >>"${staged_packages_file}"
+      fi
+    done
+  fi
 }
 
 stage_source_tree() {
@@ -433,17 +577,22 @@ run_mkarchiso() {
 }
 
 main() {
+  parse_args "$@"
   check_arch_host
   check_dependencies
   if (( EUID == 0 )); then
     fail "Run build.sh as a regular user. The script will call sudo only for mkarchiso."
   fi
 
+  configure_local_package_mode
+
   prepare_workdirs
 
   for package_name in "${AUR_PACKAGES[@]}"; do
     build_aur_package "$package_name"
   done
+
+  stage_local_package_archives
 
   refresh_local_repo
   generate_pacman_conf

@@ -48,6 +48,8 @@ Target architecture: x86_64
 ```bash
 ./build.sh
 KESKOS_ISO_VERSION=2026.05.27 ./build.sh
+./build.sh --use-local-packages
+KESKOS_LOCAL_PACKAGE_DIRS=/path/to/keskos-desktop/dist:/path/to/keskos-settings ./build.sh --use-local-packages
 ```
 
 ## Packaging notes
@@ -55,6 +57,7 @@ KESKOS_ISO_VERSION=2026.05.27 ./build.sh
 - This repo is not a single pacman package; its primary output is the installable ISO image.
 - Desktop shell and branding sources now live in `KeskOS/keskos-desktop`; this repo should consume their published packages rather than re-own their long-term development.
 - App, helper, and meta-package sources remain in their own repos and are consumed here through pacman package names.
+- `./build.sh --use-local-packages` is an opt-in development path that stages prebuilt local package archives into `keskos-local` and appends a local test package set to the live package seed without changing the default build flow.
 
 ## Troubleshooting
 

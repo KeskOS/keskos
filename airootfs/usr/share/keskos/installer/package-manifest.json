@@ -46,7 +46,7 @@
     },
     "development": {
       "label": "Development",
-      "packages": ["git", "base-devel", "code", "vscodium", "docker", "docker-compose", "github-cli", "nodejs", "npm", "python", "python-pip"]
+      "packages": ["git", "base-devel", "code", "vscodium", "kate", "docker", "docker-compose", "github-cli", "nodejs", "npm", "python", "python-pip"]
     },
     "media": {
       "label": "Media",
@@ -58,7 +58,7 @@
     },
     "system_tools": {
       "label": "System Tools",
-      "packages": ["fastfetch", "btop", "htop", "gparted", "partitionmanager", "timeshift", "kdeconnect"]
+      "packages": ["fastfetch", "btop", "htop", "gparted", "partitionmanager", "ark", "spectacle", "timeshift", "kdeconnect"]
     },
     "customization": {
       "label": "Customization",

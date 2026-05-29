@@ -39,7 +39,7 @@
         </entry>
         <entry name="systemApplications" type="StringList">
             <label>List of applications at the top of the "Computer" tab.</label>
-            <default>systemsettings.desktop,org.kde.kinfocenter.desktop,org.kde.discover.desktop</default>
+            <default>systemsettings.desktop,keskos-about.desktop</default>
         </entry>
         <entry name="paneSwap" type="Bool">
             <label>Whether to swap the sidebar and content panes</label>
