@@ -4,6 +4,7 @@ const KESKOS_LAUNCHER_WIDGET = "org.kde.plasma.simplekickoff";
 const KICKOFF_WIDGET = "org.kde.plasma.kickoff";
 const KICKER_WIDGET = "org.kde.plasma.kicker";
 const TASKS_WIDGET = "org.kde.plasma.icontasks";
+const LEGACY_TASK_WIDGETS = ["org.kde.plasma.taskmanager"];
 const WORKSPACE_WIDGET = "com.keskos.workspaceswitcher";
 const LEGACY_PAGER_WIDGETS = ["org.kde.plasma.pager", "org.kde.plasma.activitypager"];
 const WORKSPACE_WIDGET_CANDIDATES = [WORKSPACE_WIDGET].concat(LEGACY_PAGER_WIDGETS);
@@ -322,8 +323,8 @@ function configureKeskosLauncher(widget) {
     const favorites = unique([
         resolveTerminalDesktopId(),
         resolveFilesDesktopId(),
-        resolveSettingsDesktopId(),
-        "preferred://browser"
+        resolvePanelBrowserDesktopId(),
+        resolveSettingsDesktopId()
     ]).filter(function(entry) {
         return entry && entry.length > 0;
     });
@@ -429,6 +430,7 @@ function configurePanel(panel) {
         }
     }
 
+    removeWidgets(panel, LEGACY_TASK_WIDGETS);
     let tasks = findWidget(panel, [TASKS_WIDGET]);
     if (!tasks) {
         tasks = panel.addWidget(TASKS_WIDGET);

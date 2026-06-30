@@ -46,23 +46,18 @@ Core direction:
 
 ### In Progress
 
-- Calamares software selection pages
-- clickable multi-select bundle / add-on pages
-- browser selection install reliability
-- package staging and browser cleanup after install
+- Welcome first-boot browser/install reliability
 - installer layout polish and spacing cleanup
 - Quickshell / Plasma integration stability
 - installed-system defaults matching the live session exactly
 
 ### Recently Added
 
-- browser selection moved into Calamares instead of forced first-login setup
+- browser selection moved out of Calamares and into Kesk Welcome
 - Calamares deploy review page
 - custom installer progress / slideshow styling
-- multi-step software loadout flow
-- browser theme / startpage install logic
-- optional package bundle selection flow
-- browser packages staged into the ISO build path
+- first-boot browser theme / startpage logic in Welcome
+- optional package bundle selection moved to first boot
 - browser fallback away from Firefox
 
 ## Active Priorities

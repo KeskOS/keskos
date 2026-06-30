@@ -30,6 +30,33 @@ feature_enabled() {
   [[ "$value" == "true" ]]
 }
 
+desktop_entry_exists() {
+  local desktop_id="$1"
+  local desktop_root=""
+
+  [[ -n "$desktop_id" ]] || return 1
+
+  for desktop_root in \
+    /usr/local/share/applications \
+    /usr/share/applications
+  do
+    [[ -f "${desktop_root}/${desktop_id}" ]] && return 0
+  done
+
+  return 1
+}
+
+set_browser_mime_default_if_available() {
+  local desktop_id="$1"
+
+  if desktop_entry_exists "$desktop_id"; then
+    write_mimeapps /etc/xdg/mimeapps.list "$desktop_id"
+    log "Set system mime defaults to ${desktop_id}."
+  else
+    log "Selected browser desktop entry ${desktop_id} is not installed; leaving browser MIME defaults for Kesk Welcome."
+  fi
+}
+
 write_mimeapps() {
   local target_path="$1"
   local desktop_id="$2"
@@ -159,6 +186,33 @@ enable_optional_services() {
   fi
 }
 
+configure_plymouth_theme() {
+  local theme_name="keskos"
+
+  if [[ ! -d "/usr/share/plymouth/themes/${theme_name}" ]]; then
+    log "Plymouth theme ${theme_name} is not installed; leaving boot splash unchanged."
+    return 0
+  fi
+
+  if ! command -v plymouth-set-default-theme >/dev/null 2>&1; then
+    log "plymouth-set-default-theme is unavailable; leaving boot splash unchanged."
+    return 0
+  fi
+
+  if plymouth-set-default-theme "${theme_name}" >/dev/null 2>&1; then
+    log "Selected KeskOS Plymouth theme."
+  else
+    log "Could not select KeskOS Plymouth theme; continuing installation."
+    return 0
+  fi
+
+  if plymouth-set-default-theme -R "${theme_name}" >/dev/null 2>&1; then
+    log "Refreshed initramfs with the KeskOS Plymouth theme."
+  else
+    log "Initramfs refresh for Plymouth did not complete; mkinitcpio may refresh later."
+  fi
+}
+
 apply_login_and_boot_themes() {
   if feature_enabled "sddm_theme"; then
     mkdir -p /etc/sddm.conf.d
@@ -173,7 +227,7 @@ EOF
   fi
 
   if feature_enabled "plymouth"; then
-    log "Plymouth feature requested. No dedicated Plymouth theme asset is staged yet, so this remains a recorded choice only."
+    configure_plymouth_theme
   else
     log "Plymouth feature disabled."
   fi
@@ -237,13 +291,10 @@ main() {
 
   mkdir -p /etc/xdg /etc/keskos
   cp -f "$CHOICES_FILE" /etc/keskos/install-choices.json
-  write_mimeapps /etc/xdg/mimeapps.list "$browser_desktop"
-  log "Set system mime defaults to ${browser_desktop}."
+  log "Browser setup is deferred to Kesk Welcome; Calamares will not set browser defaults or theme profiles."
 
-  apply_browser_theme "$browser_key" "$target_home"
   enable_optional_services
   apply_login_and_boot_themes
-  remove_unselected_browsers "$browser_key" "$browser_package" "$remove_other_browsers"
 }
 
 main "$@"

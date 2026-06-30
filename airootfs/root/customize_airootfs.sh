@@ -12,18 +12,34 @@ fi
 passwd -d liveuser >/dev/null 2>&1 || true
 
 install -d -m 0750 /etc/sudoers.d
-cat >/etc/sudoers.d/10-liveuser <<'EOF'
+cat >/etc/sudoers.d/10-liveuser <<'EOSUDO'
 liveuser ALL=(ALL) NOPASSWD: ALL
-EOF
+EOSUDO
 chmod 0440 /etc/sudoers.d/10-liveuser
 
 cp -a /etc/skel/. /home/liveuser/
 chown -R liveuser:liveuser /home/liveuser
 
-install -d -m 0755 /usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen
-install -m 0644 \
-  /usr/local/share/keskos/source/configs/look-and-feel/com.keskos.desktop/contents/lockscreen/LockScreen.qml \
-  /usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen/LockScreen.qml
+lockscreen_source=""
+for candidate in \
+  /usr/share/keskos/source/configs/look-and-feel/com.keskos.desktop/contents/lockscreen/LockScreen.qml \
+  /usr/local/share/keskos/source/configs/look-and-feel/com.keskos.desktop/contents/lockscreen/LockScreen.qml
+
+do
+  if [[ -f "${candidate}" ]]; then
+    lockscreen_source="${candidate}"
+    break
+  fi
+done
+
+if [[ -n "${lockscreen_source}" ]]; then
+  install -d -m 0755 /usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen
+  install -m 0644 \
+    "${lockscreen_source}" \
+    /usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen/LockScreen.qml
+else
+  echo "[keskos-live] warning: no packaged lockscreen source was found; skipping live lockscreen copy"
+fi
 
 if [[ -f /home/liveuser/Desktop/Install\ KeskOS.desktop ]]; then
   chmod +x /home/liveuser/Desktop/Install\ KeskOS.desktop

@@ -22,8 +22,8 @@
             <default></default>
         </entry>
         <entry name="favorites" type="StringList">
-            <label>List of general favorites. Supported values are menu id's (usually .desktop file names), special URLs that expand into default applications (e.g. preferred://browser), document URLs and KPeople contact URIs.</label>
-            <default>org.kde.konsole.desktop,org.kde.dolphin.desktop,systemsettings.desktop,preferred://browser</default>
+            <label>List of general favorites. Supported values are menu id's (usually .desktop file names), document URLs and KPeople contact URIs.</label>
+            <default>org.kde.konsole.desktop,org.kde.dolphin.desktop,keskos-browser.desktop,systemsettings.desktop</default>
         </entry>
         <entry name="systemFavorites" type="StringList">
             <label>List of system action favorites.</label>

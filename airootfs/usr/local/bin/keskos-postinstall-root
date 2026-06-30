@@ -20,8 +20,6 @@ apply_install_choices() {
 
 write_sddm_login_defaults() {
   local target_user="$1"
-  local theme_conf="/usr/share/sddm/themes/keskos/theme.conf"
-
   [[ -n "$target_user" ]] || return 0
 
   mkdir -p /etc/sddm.conf.d /var/lib/sddm
@@ -37,13 +35,6 @@ User=${target_user}
 Session=plasma.desktop
 EOF
 
-  if [[ -f "$theme_conf" ]]; then
-    if grep -q '^defaultUser=' "$theme_conf"; then
-      sed -i "s/^defaultUser=.*/defaultUser=${target_user}/" "$theme_conf"
-    else
-      printf '\ndefaultUser=%s\n' "$target_user" >>"$theme_conf"
-    fi
-  fi
 }
 
 detect_target_user() {
@@ -75,20 +66,96 @@ LOGO=archlinux-logo
 EOF
 }
 
-cleanup_live_bits() {
-  rm -f /etc/sudoers.d/10-liveuser
-  rm -f /etc/sddm.conf.d/keskos-live.conf
-  rm -f /etc/mkinitcpio.conf.d/archiso.conf
-  rm -f /usr/share/applications/install-keskos.desktop
-  rm -f /etc/skel/Desktop/Install\ KeskOS.desktop
+initialize_installed_pacman_keyring() {
+  if ! command -v pacman-key >/dev/null 2>&1; then
+    log "pacman-key is unavailable; skipping installed keyring refresh."
+    return 0
+  fi
+
+  log "Refreshing installed pacman keyring trust database."
+  pacman-key --init >/dev/null 2>&1 || true
+  pacman-key --populate archlinux >/dev/null 2>&1 || true
+}
+
+enable_bluetooth_service_on_installed_system() {
+  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files bluetooth.service >/dev/null 2>&1; then
+    systemctl enable bluetooth.service >/dev/null 2>&1 || true
+  fi
+}
+
+disable_networkd_on_installed_system() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl disable systemd-networkd.service systemd-networkd.socket systemd-networkd-wait-online.service >/dev/null 2>&1 || true
+  fi
+
+  rm -f /etc/systemd/network/20-ethernet.network
+  rm -f /etc/systemd/network/20-wlan.network
+  rm -rf /etc/systemd/system/systemd-networkd-wait-online.service.d
+}
+
+hide_launcher_entry() {
+  local desktop_id="$1"
+  local name="$2"
+  local target_path="/usr/local/share/applications/${desktop_id}"
+
   mkdir -p /usr/local/share/applications
-  cat >/usr/local/share/applications/calamares.desktop <<'EOF'
+  if [[ -f "$target_path" ]] && grep -qxF 'Hidden=true' "$target_path" && grep -qxF 'NoDisplay=true' "$target_path"; then
+    return 0
+  fi
+
+  cat >"$target_path" <<EOF
 [Desktop Entry]
 Type=Application
 Hidden=true
 NoDisplay=true
-Name=Calamares
+Name=${name}
 EOF
+}
+
+hide_unwanted_launcher_entries() {
+  hide_launcher_entry calamares.desktop Calamares
+  hide_launcher_entry install-keskos-debug.desktop "KeskOS Installer Debug Log"
+  hide_launcher_entry assistant.desktop "Qt Assistant"
+  hide_launcher_entry designer.desktop "Qt Designer"
+  hide_launcher_entry linguist.desktop "Qt Linguist"
+  hide_launcher_entry qdbusviewer.desktop "QDBusViewer"
+  hide_launcher_entry bssh.desktop "Avahi SSH Server Browser"
+  hide_launcher_entry bvnc.desktop "Avahi VNC Server Browser"
+  hide_launcher_entry ktelnetservice6.desktop "KTelnetService"
+  hide_launcher_entry avahi-discover.desktop "Avahi Zeroconf Browser"
+  hide_launcher_entry org.kde.plasma.emojier.desktop "Emoji Selector"
+}
+
+remove_live_only_packages() {
+  local package=""
+  local packages=(
+    arch-install-scripts
+    archiso
+    calamares
+    keskos-calamares-branding
+    keskos-installer-debug-log
+    mkinitcpio-archiso
+  )
+
+  command -v pacman >/dev/null 2>&1 || return 0
+
+  for package in "${packages[@]}"; do
+    if pacman -Qq "$package" >/dev/null 2>&1; then
+      pacman -Rdd --noconfirm "$package" >/dev/null 2>&1 || log "Could not remove live-only package ${package}; continuing."
+    fi
+  done
+}
+
+cleanup_live_bits() {
+  rm -f /etc/sudoers.d/10-liveuser
+  rm -f /etc/sddm.conf.d/keskos-live.conf
+  rm -f /etc/mkinitcpio.conf.d/archiso.conf
+  disable_networkd_on_installed_system
+  enable_bluetooth_service_on_installed_system
+  rm -f /usr/share/applications/install-keskos.desktop
+  rm -f /etc/skel/Desktop/Install\ KeskOS.desktop
+  mkdir -p /usr/local/share/applications
+  hide_unwanted_launcher_entries
 
   if id -u liveuser >/dev/null 2>&1; then
     userdel -r liveuser >/dev/null 2>&1 || true
@@ -96,9 +163,6 @@ EOF
     rm -rf /home/liveuser
   fi
 
-  if command -v pacman >/dev/null 2>&1 && pacman -Qq mkinitcpio-archiso >/dev/null 2>&1; then
-    pacman -Rdd --noconfirm mkinitcpio-archiso >/dev/null 2>&1 || true
-  fi
 }
 
 configure_target_user() {
@@ -117,6 +181,7 @@ main() {
   local target_user=""
 
   write_installed_os_release
+  initialize_installed_pacman_keyring
   cleanup_live_bits
   target_user="$(detect_target_user || true)"
   log "Applying Calamares software loadout choices."
@@ -128,6 +193,7 @@ main() {
   else
     log "No target desktop user was detected during post-install."
   fi
+  remove_live_only_packages
   log "KeskOS post-install tasks complete."
 }
 

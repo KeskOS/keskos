@@ -30,8 +30,7 @@ Calamares config:
 Build note:
 
 - `build.sh` patches the upstream AUR `calamares` PKGBUILD so `packagechooser` and `packagechooserq` are not skipped at compile time. KeskOS depends on those modules being present in `/usr/lib/calamares/modules/`.
-- `build.sh` also stages `librewolf-bin`, `zen-browser-bin`, and `brave-bin` into the ISO-local repository so browser selection does not depend on the installed system fetching them later.
-- browser AUR builds use a temporary build-only GPG home under the safe build root; if a browser binary package still cannot verify its upstream key, the build retries that browser package with `--skippgpcheck` and prints a warning.
+- Browsers are no longer staged by Calamares or preinstalled by the ISO. Browser installation/default selection is deferred to Kesk Welcome after first login, using pacman first and yay fallback where needed.
 
 Calamares branding:
 
@@ -75,71 +74,36 @@ Exec phase:
 7. postinstall shell hook
 8. umount
 
-## Software Loadout
+## Deployment Defaults
 
-The installer now uses native Calamares `packagechooser` steps for the interactive software flow. These write standard global-storage keys:
+Calamares now handles deployment only: locale, keyboard, storage, users, package installation, display-manager setup, and the required KeskOS desktop defaults.
 
-- `packagechooser_keskos_browser`
-- `packagechooser_keskos_browser_theme`
-- `packagechooser_keskos_bundles`
-- `packagechooser_keskos_desktop_profile`
-- `packagechooser_keskos_addons`
-
-The review page reads those keys and renders the terminal-style deploy summary before install begins.
+The `keskoschoices` module writes a small deployment payload for post-install hooks, but browser and optional-app personalization are intentionally deferred to Kesk Welcome after first login.
 
 ## Browser Selection
 
-Browser choices:
+Browser choices are no longer made in Calamares and browser packages are no longer staged into the ISO by default.
 
-- `librewolf`
-- `zen`
-- `brave`
+Kesk Welcome owns this flow after first boot:
 
-Resolution rules:
+- LibreWolf, Brave, Zen Browser, and Firefox fallback are offered in Welcome.
+- Package resolution uses pacman first and yay fallback where needed.
+- Browser MIME/default-browser setup happens only after the user confirms a browser choice.
+- If the user skips Welcome browser setup, no browser may be installed until the user installs one manually.
 
-- package candidates are defined in `package-manifest.json`
-- the supported browsers are staged into the ISO from the KeskOS local AUR-built repository
-- the resolver maps the selected browser to the packaged desktop and package identifiers used by the install scripts
-- post-install cleanup removes the non-selected browsers so the installed system keeps only the chosen one
-
-Post-install behavior:
-
-- the selected browser is written into mime defaults
-- the browser launcher path uses `xdg-open` first, so it follows the chosen default browser
-- the Plasma taskbar browser launcher prefers the system default browser before falling back to hardcoded candidates
+The installer records browser setup as `welcome` / deferred so install reports do not claim Calamares installed or selected a browser.
 
 ## Browser Theme / Startpage
 
-The local startpage is installed at:
+The local startpage package remains available for Welcome and browser setup helpers:
 
 - `/usr/share/keskos/startpage/index.html`
 
-Browser theme assets:
-
-- `/usr/share/keskos/browser-themes/firefox/`
-- `/usr/share/keskos/browser-themes/brave/`
-
-Best-effort behavior:
-
-- Firefox-family browsers get homepage policy files
-- Brave gets managed startup / homepage policies
-- if a browser-specific path is unavailable, the install keeps going and logs the partial apply
+Welcome applies homepage/theme assets only when a selected browser exists and the relevant assets are installed.
 
 ## Package Bundles And Extra Packages
 
-Bundles are defined in:
-
-- `airootfs/usr/share/keskos/installer/package-manifest.json`
-
-The current installer supports:
-
-- curated bundle selection
-- browser selection
-- browser theme toggle
-- desktop profile selection
-- system add-on selection
-
-The current pass does **not** include a fully searchable pacman UI inside Calamares, and it no longer uses the abandoned custom `notesqml` loadout experiment.
+Optional application bundles are no longer forced by Calamares. First-boot personalization belongs to Kesk Welcome so offline installs can complete cleanly and optional package failures do not break OS deployment.
 
 Install behavior:
 

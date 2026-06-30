@@ -58,7 +58,7 @@ AbstractKickoffItemDelegate {
             source: root.decoration || root.icon.name || root.icon.source
             color: root.isCategoryListItem
                 ? (root.currentItemSelected ? keskStyle.accentColor : keskStyle.textMutedColor)
-                : undefined
+                : Kirigami.Theme.textColor
         }
 
         GridLayout {

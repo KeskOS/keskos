@@ -10,6 +10,115 @@ CALAMARES_MODULES=(
   /etc/calamares/modules/bootloader.conf
   /etc/calamares/modules/postinstall.conf
 )
+UNPACKFS_CONFIG="/etc/calamares/modules/unpackfs.conf"
+
+log_preflight() {
+  mkdir -p "$LOG_DIR"
+  printf '[keskos-open-installer] %s\n' "$1" >>"$LOG_FILE"
+}
+
+sourcefs_for_image() {
+  case "$1" in
+    *.erofs) printf 'erofs\n' ;;
+    *.sfs|*.squashfs) printf 'squashfs\n' ;;
+    *) printf 'squashfs\n' ;;
+  esac
+}
+
+find_archiso_root_image() {
+  local candidate
+
+  for candidate in \
+    /run/archiso/bootmnt/keskos/x86_64/airootfs.erofs \
+    /run/archiso/bootmnt/keskos/x86_64/airootfs.sfs \
+    /run/archiso/bootmnt/keskos/airootfs.erofs \
+    /run/archiso/bootmnt/keskos/airootfs.sfs \
+    /run/archiso/bootmnt/arch/x86_64/airootfs.erofs \
+    /run/archiso/bootmnt/arch/x86_64/airootfs.sfs
+  do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  find /run/archiso/bootmnt -maxdepth 5 -type f \
+    \( -name 'airootfs.erofs' -o -name 'airootfs.sfs' -o -name 'airootfs.squashfs' \) \
+    2>/dev/null | sort | head -n 1
+}
+
+find_archiso_root_directory() {
+  local candidate
+
+  for candidate in \
+    /run/archiso/airootfs \
+    /run/archiso/copytoram/airootfs \
+    /run/archiso/cowspace/airootfs
+  do
+    if [[ -d "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+}
+
+repair_unpackfs_config_root() {
+  local source_path sourcefs
+
+  if [[ ${EUID} -ne 0 ]]; then
+    printf 'keskos-open-installer: --repair-unpackfs must run as root\n' >&2
+    return 1
+  fi
+
+  source_path="$(find_archiso_root_image)"
+  if [[ -n "$source_path" && -f "$source_path" ]]; then
+    sourcefs="$(sourcefs_for_image "$source_path")"
+  else
+    source_path="$(find_archiso_root_directory)"
+    sourcefs="file"
+  fi
+
+  if [[ -z "$source_path" || ! -e "$source_path" ]]; then
+    log_preflight "warning: could not find archiso root image or mounted root directory under /run/archiso"
+    return 0
+  fi
+
+  install -d /etc/calamares/modules
+  cat >"$UNPACKFS_CONFIG" <<EOF
+---
+unpack:
+  - source: "$source_path"
+    sourcefs: "$sourcefs"
+    destination: ""
+EOF
+  log_preflight "using Calamares unpackfs source: $source_path ($sourcefs)"
+}
+
+repair_unpackfs_config() {
+  if [[ ${EUID} -eq 0 ]]; then
+    repair_unpackfs_config_root || true
+    return 0
+  fi
+
+  if command -v sudo >/dev/null 2>&1; then
+    sudo -E "$0" --repair-unpackfs || true
+    return 0
+  fi
+
+  if command -v pkexec >/dev/null 2>&1; then
+    pkexec env \
+      DISPLAY="${DISPLAY:-}" \
+      XAUTHORITY="${XAUTHORITY:-}" \
+      WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+      XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" \
+      DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
+      "$0" --repair-unpackfs || true
+    return 0
+  fi
+
+  log_preflight "warning: neither sudo nor pkexec was available to repair unpackfs.conf"
+}
+
 
 open_log_viewer() {
   local message="$1"
@@ -115,11 +224,17 @@ run_installer() {
   return "$status"
 }
 
+if [[ "${1:-}" == "--repair-unpackfs" ]]; then
+  repair_unpackfs_config_root
+  exit $?
+fi
+
 if ! command -v calamares >/dev/null 2>&1; then
   printf 'keskos-open-installer: calamares is not installed in this environment\n' >&2
   exit 1
 fi
 
+repair_unpackfs_config
 write_debug_prelude
 
 if [[ ${EUID} -eq 0 ]]; then

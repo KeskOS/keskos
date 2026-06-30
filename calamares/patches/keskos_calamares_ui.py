@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import sys
 
 
@@ -10,6 +11,14 @@ def replace_once(path: Path, old: str, new: str) -> None:
     if old not in text:
         raise RuntimeError(f"expected snippet not found in {path}")
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+def replace_regex_once(path: Path, pattern: str, replacement: str, *, flags: int = re.MULTILINE | re.DOTALL) -> None:
+    text = path.read_text(encoding="utf-8")
+    updated_text, replacements = re.subn(pattern, lambda _: replacement, text, count=1, flags=flags)
+    if replacements != 1:
+        raise RuntimeError(f"expected regex snippet not found in {path}")
+    path.write_text(updated_text, encoding="utf-8")
 
 
 def main() -> int:
@@ -666,15 +675,25 @@ PackageChooserPage::selectedPackageIds() const
         (
             "src/modules/finished/FinishedViewStep.cpp",
             '    return tr( "Finish", "@label" );\n',
-            '    return tr( "09 COMPLETE", "@label" );\n',
+            '    return tr( "08 COMPLETE", "@label" );\n',
         ),
         (
             "src/libcalamaresui/viewpages/ExecutionViewStep.cpp",
             '    return Calamares::Settings::instance()->isSetupMode() ? tr( "Set Up", "@label" ) : tr( "Install", "@label" );\n',
-            '    return Calamares::Settings::instance()->isSetupMode() ? tr( "08 SET UP", "@label" ) : tr( "08 INSTALL", "@label" );\n',
+            '    return Calamares::Settings::instance()->isSetupMode() ? tr( "07 SET UP", "@label" ) : tr( "07 INSTALL", "@label" );\n',
         ),
     ):
         replace_once(root / relative_path, old, new)
+
+    replace_regex_once(
+        root / "src/modules/finished/FinishedPage.cpp",
+        r'ui->mainText->setText\(\s*tr\(\s*"<h1>All done\.</h1><br/>"\s*"%1 has been installed on your computer\.<br/>"\s*"You may now restart into your new system, or continue "\s*"using the %2 Live environment\.",\s*"@info" \)\s*\.arg\( branding->versionedName\(\), branding->productName\(\) \)\s*\);',
+        """ui->mainText->setText( tr( "<h1>All done.</h1><br/>"
+                                    "%1 has been deployed on your computer.<br/>"
+                                    "After reboot and login, Kesk Welcome will guide first-boot setup.",
+                                    "@info" )
+                                    .arg( branding->versionedName() ) );""",
+    )
 
     replace_once(
         root / "src/modules/welcome/Config.cpp",
@@ -886,7 +905,7 @@ Config::genericWelcomeMessage() const
 
         auto* brandTitle = new QLabel( tr( "K E S K   O S", "@title" ), brandCard );
         brandTitle->setObjectName( "welcomeBrandTitle" );
-        auto* brandEdition = new QLabel( tr( "S.P.L.I.T. EDITION", "@info" ), brandCard );
+        auto* brandEdition = new QLabel( Calamares::Branding::instance()->versionedName(), brandCard );
         brandEdition->setObjectName( "welcomeBrandMeta" );
         auto* brandTagline = new QLabel( tr( "BUILT DIFFERENT.", "@info" ), brandCard );
         brandTagline->setObjectName( "welcomeBrandMeta" );

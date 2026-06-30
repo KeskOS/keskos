@@ -21,11 +21,11 @@ _translation = gettext.translation(
 _ = _translation.gettext
 
 
-STATUS = _("Preparing KeskOS software loadout.")
+STATUS = _("Preparing KeskOS deployment defaults.")
 
 
 def pretty_name():
-    return _("Resolve KeskOS software loadout.")
+    return _("Resolve KeskOS deployment defaults.")
 
 
 def pretty_status_message():
@@ -66,32 +66,41 @@ def default_features(manifest: dict) -> dict:
     return {key: bool(value.get("default", False)) for key, value in manifest.get("features", {}).items()}
 
 
-def load_selections(config: dict, manifest: dict) -> dict:
-    browser_key = str(config.get("browserKey", "packagechooser_keskos_browser"))
-    browser_theme_key = str(config.get("browserThemeKey", "packagechooser_keskos_browser_theme"))
-    bundles_key = str(config.get("bundlesKey", "packagechooser_keskos_bundles"))
-    desktop_profile_key = str(config.get("desktopProfileKey", "packagechooser_keskos_desktop_profile"))
-    addons_key = str(config.get("addonsKey", "packagechooser_keskos_addons"))
+def bool_value(raw_value, default: bool = False) -> bool:
+    if raw_value is None:
+        return default
+    if isinstance(raw_value, bool):
+        return raw_value
 
-    browser_selection = split_selection(libcalamares.globalstorage.value(browser_key))
-    browser = browser_selection[0] if browser_selection else "librewolf"
+    normalized = str(raw_value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off", ""}:
+        return False
+    return default
 
-    theme_selection = split_selection(libcalamares.globalstorage.value(browser_theme_key))
-    apply_browser_theme = not theme_selection or theme_selection[0] != "browser_theme_off"
 
-    bundles = [
-        item
-        for item in split_selection(libcalamares.globalstorage.value(bundles_key))
-        if item in manifest.get("bundles", {})
+def normalize_list(raw_value) -> list[str]:
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, list):
+        return unique([str(item).strip() for item in raw_value if str(item).strip()])
+    return split_selection(raw_value)
+
+
+def load_install_defaults(config: dict, manifest: dict) -> dict:
+    browser = str(config.get("defaultBrowser", "librewolf")).strip() or "librewolf"
+    apply_browser_theme = bool_value(config.get("applyBrowserTheme"), default=False)
+    remove_other_browsers_after_install = bool_value(config.get("removeOtherBrowsersAfterInstall"), default=False)
+    bundles = [item for item in normalize_list(config.get("defaultBundles", [])) if item in manifest.get("bundles", {})]
+    desktop_profile = str(config.get("defaultDesktopProfile", "kesk_default")).strip() or "kesk_default"
+    addons = [item for item in normalize_list(config.get("defaultAddons", [])) if item in manifest.get("features", {})]
+    extra_packages = normalize_list(config.get("extraPackages", []))
+    force_enabled_features = [
+        item for item in normalize_list(config.get("forceEnabledFeatures", [])) if item in manifest.get("features", {})
     ]
-
-    desktop_profile_selection = split_selection(libcalamares.globalstorage.value(desktop_profile_key))
-    desktop_profile = desktop_profile_selection[0] if desktop_profile_selection else "kesk_default"
-
-    addons = [
-        item
-        for item in split_selection(libcalamares.globalstorage.value(addons_key))
-        if item in manifest.get("features", {})
+    force_disabled_features = [
+        item for item in normalize_list(config.get("forceDisabledFeatures", [])) if item in manifest.get("features", {})
     ]
 
     features = default_features(manifest)
@@ -124,13 +133,22 @@ def load_selections(config: dict, manifest: dict) -> dict:
         if feature_key in features:
             features[feature_key] = True
 
+    for feature_key in force_disabled_features:
+        if feature_key in features:
+            features[feature_key] = False
+
+    for feature_key in force_enabled_features:
+        if feature_key in features:
+            features[feature_key] = True
+
     return {
         "browser": browser,
         "apply_browser_theme": apply_browser_theme,
+        "remove_other_browsers_after_install": remove_other_browsers_after_install,
         "bundles": bundles,
         "desktop_profile": desktop_profile,
         "addons": addons,
-        "extra_packages": [],
+        "extra_packages": extra_packages,
         "features": features,
     }
 
@@ -157,29 +175,19 @@ def write_text(path: Path, lines: list[str]) -> None:
 
 
 def resolve_browser(selections: dict, manifest: dict) -> tuple[dict, list[str]]:
-    warnings: list[str] = []
-    browsers = manifest["browsers"]
-    selected_key = selections["browser"]
-    resolved_key = selected_key if selected_key in browsers else "librewolf"
-    if resolved_key != selected_key:
-        warnings.append(
-            f"Requested browser '{selected_key}' was unknown to the installer manifest. Falling back to LibreWolf."
-        )
-
-    browser_meta = browsers.get(resolved_key, browsers["librewolf"])
-    package_candidates = browser_meta.get("package_candidates", [])
-    package_name = package_candidates[0] if package_candidates else ""
-
+    # Browser installation/default selection moved to Kesk Welcome first boot.
+    # Keep a stable payload shape for older report readers, but do not resolve
+    # or apply a browser from Calamares anymore.
     return (
         {
-            "selected_key": selected_key,
-            "resolved_key": resolved_key,
-            "package": package_name,
-            "desktop": browser_meta["desktop_candidates"][0] if browser_meta["desktop_candidates"] else "librewolf.desktop",
-            "family": browser_meta["family"],
-            "remove_other_browsers_after_install": True,
+            "selected_key": "welcome",
+            "resolved_key": "welcome",
+            "package": "",
+            "desktop": "",
+            "family": "deferred",
+            "remove_other_browsers_after_install": False,
         },
-        warnings,
+        [],
     )
 
 
@@ -258,7 +266,7 @@ def run():
 
     debug(f"Loading manifest from {manifest_path}")
     manifest = load_manifest(manifest_path)
-    selections = load_selections(config, manifest)
+    selections = load_install_defaults(config, manifest)
     choices, operations, warnings = build_choice_payload(selections, manifest)
 
     merged_operations = merge_package_operations(operations)
@@ -280,9 +288,9 @@ def run():
     for warning_message in warnings:
         warn(warning_message)
 
-    STATUS = _("Resolved KeskOS software loadout.")
+    STATUS = _("Resolved KeskOS deployment defaults.")
     debug(
-        f"Resolved browser={choices['browser']['resolved_key']} "
-        f"bundles={choices['bundles']} profile={choices['desktop_profile']} addons={choices['addons']}"
+        f"Browser setup deferred to Welcome "
+        f"profile={choices['desktop_profile']} apply_browser_theme={choices['apply_browser_theme']}"
     )
     return None

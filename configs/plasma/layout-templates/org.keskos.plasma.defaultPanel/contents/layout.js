@@ -104,8 +104,8 @@ function configureLauncher(widget) {
     const favorites = unique([
         resolveTerminalDesktopId(),
         resolveFilesDesktopId(),
-        resolveSettingsDesktopId(),
-        "preferred://browser"
+        resolvePanelBrowserDesktopId(),
+        resolveSettingsDesktopId()
     ]).filter(function(entry) {
         return entry && entry.length > 0;
     });

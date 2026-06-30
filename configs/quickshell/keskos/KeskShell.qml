@@ -15,7 +15,7 @@ Scope {
     property color separator: "#30ce6a35"
     property int topBarHeight: 34
     property string helperPath: "/usr/local/bin/keskos-quickshell-data"
-    property string assetRoot: "/usr/local/share/keskos/source/assets/panel-icons"
+    property string assetRoot: "/usr/share/keskos/panel-icons"
     property string activePopup: ""
     property var activePopupScreen: null
     property string commandToRun: ""

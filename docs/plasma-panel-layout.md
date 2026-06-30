@@ -7,7 +7,7 @@ KeskOS ships a branded Plasma bottom panel instead of relying on the stock KDE d
 The active branded panel uses:
 
 - the patched `Kesk Kickoff` launcher
-- `org.kde.plasma.icontasks` with pinned launchers
+- `org.kde.plasma.taskmanager` with pinned launchers
 - the KeskOS workspace switcher
 
 Pinned launchers come from the task manager defaults:

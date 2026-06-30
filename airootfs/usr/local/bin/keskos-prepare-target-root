@@ -13,56 +13,128 @@ target_path() {
   printf '%s%s\n' "${TARGET_ROOT%/}" "$relative_path"
 }
 
+write_standard_mkinitcpio_conf() {
+  install -d -m 0755 "$(target_path /etc/mkinitcpio.conf.d)"
+  rm -f "$(target_path /etc/mkinitcpio.conf.d/archiso.conf)"
+  cat >"$(target_path /etc/mkinitcpio.conf)" <<'EOF'
+# Standard installed-system mkinitcpio configuration for KeskOS.
+# Live ISO archiso hooks must not be used for the installed system.
+MODULES=()
+BINARIES=()
+FILES=()
+HOOKS=(base udev autodetect microcode modconf kms keyboard keymap consolefont plymouth block filesystems fsck)
+COMPRESSION="zstd"
+EOF
+}
+
 write_standard_linux_preset() {
   install -d -m 0755 "$(target_path /etc/mkinitcpio.d)"
   cat >"$(target_path /etc/mkinitcpio.d/linux.preset)" <<'EOF'
 # mkinitcpio preset file for the 'linux' package
 
-#ALL_config="/etc/mkinitcpio.conf"
+ALL_config="/etc/mkinitcpio.conf"
 ALL_kver="/boot/vmlinuz-linux"
-#ALL_kerneldest="/boot/vmlinuz-linux"
 
 PRESETS=('default')
-#PRESETS=('default' 'fallback')
 
-#default_config="/etc/mkinitcpio.conf"
 default_image="/boot/initramfs-linux.img"
-#default_uki="/efi/EFI/Linux/arch-linux.efi"
-#default_options="--splash /usr/share/systemd/bootctl/splash-arch.bmp"
-
-#fallback_config="/etc/mkinitcpio.conf"
-#fallback_image="/boot/initramfs-linux-fallback.img"
-#fallback_uki="/efi/EFI/Linux/arch-linux-fallback.efi"
-#fallback_options="-S autodetect"
 EOF
 }
 
-seed_kernel_image() {
-  local source_kernel="${LIVE_BOOT_MOUNT%/}/boot/x86_64/vmlinuz-linux"
-  local target_kernel
-
-  target_kernel="$(target_path /boot/vmlinuz-linux)"
-  install -d -m 0755 "$(dirname "$target_kernel")"
-
-  if [[ -r "$target_kernel" ]]; then
-    log "Target kernel image already exists at ${target_kernel}."
-    return 0
-  fi
+copy_kernel_candidate() {
+  local source_kernel="$1"
+  local target_kernel="$2"
 
   if [[ -r "$source_kernel" ]]; then
-    log "Copying live kernel image into target boot directory."
+    log "Copying kernel image from ${source_kernel} into target boot directory."
     install -m 0644 "$source_kernel" "$target_kernel"
     return 0
   fi
 
-  log "Live kernel image was not found at ${source_kernel}; initcpio may fail."
+  return 1
+}
+
+copy_first_kernel_glob() {
+  local pattern="$1"
+  local target_kernel="$2"
+  local source_kernel
+
+  while IFS= read -r source_kernel; do
+    copy_kernel_candidate "$source_kernel" "$target_kernel" && return 0
+  done < <(compgen -G "$pattern" | sort -V)
+
+  return 1
+}
+
+seed_kernel_image() {
+  local target_kernel
+  target_kernel="$(target_path /boot/vmlinuz-linux)"
+  install -d -m 0755 "$(dirname "$target_kernel")"
+
+  if [[ -s "$target_kernel" ]]; then
+    log "Target kernel image already exists at ${target_kernel}."
+    return 0
+  fi
+
+  # Prefer the kernel shipped inside the installed linux package when unpackfs copied it.
+  if copy_first_kernel_glob "$(target_path /usr/lib/modules)/*/vmlinuz" "$target_kernel"; then
+    return 0
+  fi
+
+  # Fall back to common archiso boot mount layouts. Real hardware can expose either
+  # install_dir-specific paths or legacy arch paths depending on how the ISO booted.
+  local candidates=(
+    "${LIVE_BOOT_MOUNT%/}/boot/x86_64/vmlinuz-linux"
+    "${LIVE_BOOT_MOUNT%/}/x86_64/vmlinuz-linux"
+    "/run/archiso/bootmnt/keskos/boot/x86_64/vmlinuz-linux"
+    "/run/archiso/bootmnt/keskos/x86_64/vmlinuz-linux"
+    "/run/archiso/bootmnt/arch/boot/x86_64/vmlinuz-linux"
+    "/run/archiso/bootmnt/arch/x86_64/vmlinuz-linux"
+    "/run/archiso/airootfs/boot/vmlinuz-linux"
+    "/boot/vmlinuz-linux"
+  )
+
+  local source_kernel
+  for source_kernel in "${candidates[@]}"; do
+    copy_kernel_candidate "$source_kernel" "$target_kernel" && return 0
+  done
+
+  if copy_first_kernel_glob "/usr/lib/modules/*/vmlinuz" "$target_kernel"; then
+    return 0
+  fi
+
+  log "error: no kernel image could be found for the installed system."
+  log "error: checked target /usr/lib/modules, live boot mount, /run/archiso/airootfs, and /boot."
+  return 1
+}
+initialize_pacman_keyring() {
+  local chroot_bin=""
+
+  if [[ ! -x "$(target_path /usr/bin/pacman-key)" ]]; then
+    log "pacman-key is unavailable in target root; skipping keyring initialization."
+    return 0
+  fi
+
+  if command -v arch-chroot >/dev/null 2>&1; then
+    chroot_bin="arch-chroot"
+  elif command -v chroot >/dev/null 2>&1; then
+    chroot_bin="chroot"
+  else
+    log "No chroot helper is available; skipping keyring initialization."
+    return 0
+  fi
+
+  log "Initializing target pacman keyring."
+  "$chroot_bin" "${TARGET_ROOT%/}" pacman-key --init >/dev/null 2>&1 || log "pacman-key --init reported a non-fatal issue."
+  "$chroot_bin" "${TARGET_ROOT%/}" pacman-key --populate archlinux >/dev/null 2>&1 || log "pacman-key --populate archlinux reported a non-fatal issue."
 }
 
 main() {
   log "Preparing target root at ${TARGET_ROOT} for a standard mkinitcpio run."
-  rm -f "$(target_path /etc/mkinitcpio.conf.d/archiso.conf)"
+  write_standard_mkinitcpio_conf
   write_standard_linux_preset
   seed_kernel_image
+  initialize_pacman_keyring
 }
 
 main "$@"

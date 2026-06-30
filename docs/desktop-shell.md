@@ -120,7 +120,7 @@ The display watcher then:
 The bottom bar is now a real Plasma panel with:
 
 - `org.kde.plasma.simplekickoff` on the far left by default
-- `org.kde.plasma.icontasks` as the real pinned/running app taskbar
+- `org.kde.plasma.taskmanager` as the real pinned/running app taskbar
 - `com.keskos.workspaceswitcher` on the right side
 
 The panel setup script lives at:

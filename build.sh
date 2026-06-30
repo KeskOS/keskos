@@ -4,26 +4,44 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "${REPO_ROOT}/.." && pwd)"
 OUT_DIR="${REPO_ROOT}/out"
-SAFE_BUILD_ROOT="/tmp/keskos-build-${UID}"
+SAFE_BUILD_ROOT="${KESKOS_SAFE_BUILD_ROOT:-/tmp/keskos-build-${UID}}"
+WORKSPACE_PACKAGE_ROOT="${TMPDIR:-/tmp}/keskos-workspace-packages-${UID}"
+DESKTOP_PACKAGE_ROOT="${WORKSPACE_ROOT}/keskos-desktop/packages"
 WORK_ROOT="${SAFE_BUILD_ROOT}/work"
 STAGE_DIR="${WORK_ROOT}/profile"
 ARCHISO_WORK_DIR="${WORK_ROOT}/archiso"
 LOCAL_REPO_DIR="${WORK_ROOT}/localrepo/x86_64"
-GENERATED_PACMAN_CONF="${WORK_ROOT}/pacman.conf"
+GENERATED_PACMAN_CONF="${STAGE_DIR}/pacman.conf"
+GENERATED_MIRRORLIST="${STAGE_DIR}/pacman-mirrorlist"
+LOCAL_BUILD_PACMAN_CONF="${WORK_ROOT}/local-build-pacman.conf"
+LOCAL_BUILD_MIRRORLIST="${WORK_ROOT}/local-build-mirrorlist"
+LOCAL_BUILD_PACMAN_WRAPPER="${WORK_ROOT}/local-build-pacman"
+PACMAN_SYNC_DB_PATH="${WORK_ROOT}/pacman-sync-db"
+PACMAN_SYNC_CACHE_DIR="${WORK_ROOT}/pacman-sync-cache"
 AUR_BUILD_ROOT="${SAFE_BUILD_ROOT}/aur"
+REPO_BUILD_ROOT="${SAFE_BUILD_ROOT}/repo-packages"
 AUR_PKGDEST="${SAFE_BUILD_ROOT}/pkgdest"
 GNUPG_BUILD_HOME="${SAFE_BUILD_ROOT}/gnupg"
 SOURCE_DATE="${SOURCE_DATE_EPOCH:-$(date +%s)}"
 ISO_VERSION="${KESKOS_ISO_VERSION:-$(date --date="@${SOURCE_DATE}" +%Y.%m.%d)}"
-AUR_PACKAGES=(calamares librewolf-bin zen-browser-bin brave-bin)
-SKIP_PGP_FALLBACK_PACKAGES=(librewolf-bin zen-browser-bin brave-bin)
-USE_LOCAL_PACKAGES=0
-LOCAL_PACKAGE_DIRS_RAW="${KESKOS_LOCAL_PACKAGE_DIRS:-}"
-LOCAL_INSTALL_PACKAGES_RAW="${KESKOS_LOCAL_INSTALL_PACKAGES:-}"
-LOCAL_PACKAGE_DIR_OVERRIDES=()
-LOCAL_INSTALL_PACKAGE_OVERRIDES=()
-LOCAL_PACKAGE_DIRS=()
-LOCAL_INSTALL_PACKAGES=()
+REPO_CHECK_SCRIPT="${REPO_ROOT}/scripts/check-keskos-repo-packages.sh"
+REQUIRED_PACKAGE_LIST="${REPO_ROOT}/config/keskos-required-packages.txt"
+BUILD_MODE="${KESKOS_BUILD_MODE:-release}"
+SOURCE_CHOICE="${KESKOS_PACKAGE_SOURCE:-}"
+CHECK_ONLY="${KESKOS_BUILD_CHECK_ONLY:-0}"
+LOCAL_PACKAGE_ROOT="${KESKOS_LOCAL_PACKAGE_ROOT:-${REPO_ROOT}/packages}"
+LOCAL_REPO_SOURCE_DIR="${KESKOS_LOCAL_REPO_SOURCE_DIR:-}"
+REPO_PACKAGES=()
+LOCAL_PACKAGES=()
+CLI_LOCAL_PACKAGES=()
+BROWSER_AUR_PACKAGES=(librewolf-bin zen-browser-bin brave-bin)
+AUR_PACKAGES=()
+SKIP_PGP_FALLBACK_PACKAGES=("${BROWSER_AUR_PACKAGES[@]}")
+BUILD_SYSTEMSETTINGS_OVERRIDE=0
+BUILD_CALAMARES_OVERRIDE=0
+BUILD_BROWSER_PKGS=0
+SKIP_REPO_CHECK="${KESKOS_SKIP_REPO_CHECK:-0}"
+AUTO_DISCOVERED_LOCAL_PACKAGES=0
 
 log() {
   printf '[keskos-build] %s\n' "$1"
@@ -36,6 +54,154 @@ warn() {
 fail() {
   printf '[keskos-build] error: %s\n' "$1" >&2
   exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: ./build.sh [--check] [--skip-repo-check] [--package-source repo|local]
+
+Options:
+  --check            Validate inputs, package resolution, and staging, then
+                     exit before mkarchiso.
+  --skip-repo-check  Skip the KeskOS package availability preflight.
+  --package-source   Choose published repo packages or local folder overrides.
+                     repo  = release mode, use [keskos]
+                     local = local-dev mode, prefer local package folders
+  --source           Alias for --package-source.
+  --local-package    Repeatable. Build a specific local package folder into
+                     [keskos-local]. Supports comma-separated names too.
+  --local-package-root /path/to/packages
+                     Override the local package folder root.
+  --local-repo-dir /path/to/pkgdir
+                     Import prebuilt .pkg.tar.* files into [keskos-local].
+
+Environment:
+  KESKOS_BUILD_MODE=release|local-dev
+                               Select the ISO build mode. Defaults to release.
+  KESKOS_PACKAGE_SOURCE=repo|local
+                               Shortcut for selecting repo packages or local
+                               folder overrides during the ISO build.
+  KESKOS_BUILD_CHECK_ONLY=1    Same as --check.
+  KESKOS_BUILD_SYSTEMSETTINGS_OVERRIDE=1
+                               In local-dev mode, build a patched systemsettings
+                               package into [keskos-local].
+  KESKOS_BUILD_CALAMARES_OVERRIDE=1
+                               In local-dev mode, build a patched calamares
+                               package into [keskos-local].
+  KESKOS_BUILD_BROWSER_PKGS=1  In local-dev mode, also build LibreWolf, Zen,
+                               and Brave into [keskos-local].
+  KESKOS_LOCAL_PACKAGES="pkg1 pkg2"
+                               In local-dev mode, build extra local package
+                               overrides from KESKOS_LOCAL_PACKAGE_ROOT.
+  KESKOS_LOCAL_PACKAGE_ROOT=/path/to/packages
+                               Root directory for local package override trees.
+  KESKOS_LOCAL_REPO_SOURCE_DIR=/path/to/pkgdir
+                               Import prebuilt .pkg.tar.* overrides into
+                               [keskos-local] before mkarchiso.
+EOF
+}
+
+fail_if_missing_arg() {
+  local option_name="$1"
+  local option_value="${2-}"
+
+  [[ -n "${option_value}" ]] || fail "Missing value for ${option_name}"
+}
+
+append_unique_item() {
+  local -n array_ref="$1"
+  local value="$2"
+  local existing=""
+
+  for existing in "${array_ref[@]}"; do
+    if [[ "${existing}" == "${value}" ]]; then
+      return 0
+    fi
+  done
+
+  array_ref+=("${value}")
+}
+
+append_package_values() {
+  local -n array_ref="$1"
+  local raw_value="$2"
+  local parsed_name=""
+  local -a parsed_values=()
+
+  [[ -n "${raw_value//[[:space:],]/}" ]] || return 0
+  read -r -a parsed_values <<<"${raw_value//,/ }"
+
+  for parsed_name in "${parsed_values[@]}"; do
+    [[ -n "${parsed_name}" ]] || continue
+    append_unique_item array_ref "${parsed_name}"
+  done
+}
+
+parse_args() {
+  while (($#)); do
+    case "$1" in
+      --check)
+        CHECK_ONLY=1
+        ;;
+      --skip-repo-check)
+        SKIP_REPO_CHECK=1
+        ;;
+      --package-source|--source)
+        shift
+        fail_if_missing_arg "--package-source" "${1-}"
+        SOURCE_CHOICE="$1"
+        ;;
+      --local-package)
+        shift
+        fail_if_missing_arg "--local-package" "${1-}"
+        append_package_values CLI_LOCAL_PACKAGES "$1"
+        ;;
+      --local-package-root)
+        shift
+        fail_if_missing_arg "--local-package-root" "${1-}"
+        LOCAL_PACKAGE_ROOT="$1"
+        ;;
+      --local-repo-dir|--local-repo-source-dir)
+        shift
+        fail_if_missing_arg "--local-repo-dir" "${1-}"
+        LOCAL_REPO_SOURCE_DIR="$1"
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        fail "Unknown argument: $1"
+        ;;
+    esac
+    shift
+  done
+}
+
+append_sudo_env_if_set() {
+  local array_name="$1"
+  local -n target_env_ref="${array_name}"
+  local var_name="$2"
+  local value="${!var_name-}"
+
+  if [[ -n "$value" ]]; then
+    target_env_ref+=("${var_name}=${value}")
+  fi
+}
+
+build_sudo_env() {
+  local array_name="$1"
+  local variable_name=""
+
+  for variable_name in \
+    TMPDIR TMP TEMP \
+    http_proxy https_proxy ftp_proxy rsync_proxy no_proxy all_proxy \
+    HTTP_PROXY HTTPS_PROXY FTP_PROXY RSYNC_PROXY NO_PROXY ALL_PROXY \
+    RES_OPTIONS LOCALDOMAIN \
+    SSL_CERT_FILE SSL_CERT_DIR CURL_CA_BUNDLE
+  do
+    append_sudo_env_if_set "${array_name}" "$variable_name"
+  done
 }
 
 array_contains() {
@@ -52,84 +218,316 @@ array_contains() {
   return 1
 }
 
-split_colon_list() {
-  local raw_value="$1"
-  local output_name="$2"
-  local -n output_ref="$output_name"
-  local item=""
-  local -a parsed=()
-
-  output_ref=()
-  [[ -n "$raw_value" ]] || return 0
-
-  IFS=':' read -r -a parsed <<<"$raw_value"
-  for item in "${parsed[@]}"; do
-    [[ -n "$item" ]] || continue
-    output_ref+=("$item")
-  done
+env_flag_enabled() {
+  case "${1,,}" in
+    1|true|yes|on)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
-parse_args() {
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --use-local-packages)
-        USE_LOCAL_PACKAGES=1
-        shift
-        ;;
-      --local-package-dir)
-        [[ $# -ge 2 ]] || fail "--local-package-dir requires a directory path"
-        LOCAL_PACKAGE_DIR_OVERRIDES+=("$2")
-        USE_LOCAL_PACKAGES=1
-        shift 2
-        ;;
-      --local-install-package)
-        [[ $# -ge 2 ]] || fail "--local-install-package requires a package name"
-        LOCAL_INSTALL_PACKAGE_OVERRIDES+=("$2")
-        USE_LOCAL_PACKAGES=1
-        shift 2
-        ;;
-      *)
-        fail "Unknown argument: $1"
-        ;;
-    esac
-  done
+validate_build_mode() {
+  case "${BUILD_MODE}" in
+    release|local-dev)
+      ;;
+    *)
+      fail "Unsupported KESKOS_BUILD_MODE: ${BUILD_MODE}. Use release or local-dev."
+      ;;
+  esac
 }
 
-configure_local_package_mode() {
-  if [[ "$USE_LOCAL_PACKAGES" -ne 1 ]]; then
+validate_source_choice() {
+  [[ -z "${SOURCE_CHOICE}" ]] && return 0
+
+  case "${SOURCE_CHOICE}" in
+    repo|local)
+      ;;
+    *)
+      fail "Unsupported --package-source value: ${SOURCE_CHOICE}. Use repo or local."
+      ;;
+  esac
+}
+
+parse_local_package_list() {
+  local raw_value="${KESKOS_LOCAL_PACKAGES:-}"
+
+  if [[ -z "${raw_value//[[:space:],]/}" ]]; then
     return 0
   fi
 
-  if (( ${#LOCAL_PACKAGE_DIR_OVERRIDES[@]} > 0 )); then
-    LOCAL_PACKAGE_DIRS=("${LOCAL_PACKAGE_DIR_OVERRIDES[@]}")
-  elif [[ -n "$LOCAL_PACKAGE_DIRS_RAW" ]]; then
-    split_colon_list "$LOCAL_PACKAGE_DIRS_RAW" LOCAL_PACKAGE_DIRS
-  else
-    LOCAL_PACKAGE_DIRS=(
-      "${WORKSPACE_ROOT}/keskos-desktop/dist"
-      "${WORKSPACE_ROOT}/keskos-calamares-branding"
-      "${WORKSPACE_ROOT}/keskos-installer-debug-log"
-      "${WORKSPACE_ROOT}/keskos-desktop-meta"
-      "${WORKSPACE_ROOT}/keskos-release"
-      "${WORKSPACE_ROOT}/keskos-settings"
-      "${WORKSPACE_ROOT}/keskos-tools"
-      "${WORKSPACE_ROOT}/keskos-welcome"
-    )
+  # Support either whitespace-separated or comma-separated package lists.
+  append_package_values LOCAL_PACKAGES "${raw_value}"
+}
+
+prepare_workspace_package_root() {
+  local repo_dir=""
+  local package_dir=""
+  local link_name=""
+
+  rm -rf "${WORKSPACE_PACKAGE_ROOT}"
+  mkdir -p "${WORKSPACE_PACKAGE_ROOT}"
+
+  while IFS= read -r -d '' repo_dir; do
+    [[ -f "${repo_dir}/PKGBUILD" ]] || continue
+    link_name="$(basename "${repo_dir}")"
+    ln -sfn "${repo_dir}" "${WORKSPACE_PACKAGE_ROOT}/${link_name}"
+  done < <(find "${WORKSPACE_ROOT}" -mindepth 1 -maxdepth 1 -type d -print0)
+
+  if [[ -d "${DESKTOP_PACKAGE_ROOT}" ]]; then
+    while IFS= read -r -d '' package_dir; do
+      [[ -f "${package_dir}/PKGBUILD" ]] || continue
+      link_name="$(basename "${package_dir}")"
+      ln -sfn "${package_dir}" "${WORKSPACE_PACKAGE_ROOT}/${link_name}"
+    done < <(find "${DESKTOP_PACKAGE_ROOT}" -mindepth 1 -maxdepth 1 -type d -print0)
+  fi
+}
+
+resolve_local_package_root() {
+  if [[ -n "${KESKOS_LOCAL_PACKAGE_ROOT:-}" ]]; then
+    LOCAL_PACKAGE_ROOT="${KESKOS_LOCAL_PACKAGE_ROOT}"
+    return 0
   fi
 
-  if (( ${#LOCAL_INSTALL_PACKAGE_OVERRIDES[@]} > 0 )); then
-    LOCAL_INSTALL_PACKAGES=("${LOCAL_INSTALL_PACKAGE_OVERRIDES[@]}")
-  elif [[ -n "$LOCAL_INSTALL_PACKAGES_RAW" ]]; then
-    split_colon_list "$LOCAL_INSTALL_PACKAGES_RAW" LOCAL_INSTALL_PACKAGES
-  else
-    LOCAL_INSTALL_PACKAGES=(
-      "keskos-calamares-branding"
-      "keskos-installer-debug-log"
-      "keskos-desktop-meta"
-    )
+  if [[ "${BUILD_MODE}" == "local-dev" || "${SOURCE_CHOICE}" == "local" || -n "${LOCAL_REPO_SOURCE_DIR}" ]]; then
+    prepare_workspace_package_root
+    LOCAL_PACKAGE_ROOT="${WORKSPACE_PACKAGE_ROOT}"
+    return 0
   fi
 
-  log "Local package install mode enabled."
+  LOCAL_PACKAGE_ROOT="${REPO_ROOT}/packages"
+}
+
+read_package_names_from_file() {
+  local input_file="$1"
+
+  [[ -f "${input_file}" ]] || return 0
+  awk '
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    { print $1 }
+  ' "${input_file}"
+}
+
+read_prebuilt_local_repo_package_names() {
+  local package_file=""
+
+  [[ -d "${LOCAL_REPO_SOURCE_DIR}" ]] || return 0
+  command -v pacman >/dev/null 2>&1 || return 0
+
+  while IFS= read -r -d '' package_file; do
+    pacman -Qp "${package_file}" 2>/dev/null | awk '{print $1}' || true
+  done < <(
+    find "${LOCAL_REPO_SOURCE_DIR}" -maxdepth 1 -type f \
+      \( -name '*.pkg.tar.zst' -o -name '*.pkg.tar.xz' -o -name '*.pkg.tar' \) \
+      -print0
+  )
+}
+
+discover_local_seed_overrides() {
+  local package_name=""
+  local -a discovered=()
+
+  while IFS= read -r package_name; do
+    [[ -n "${package_name}" ]] || continue
+    if [[ -f "${LOCAL_PACKAGE_ROOT}/${package_name}/PKGBUILD" ]]; then
+      append_unique_item discovered "${package_name}"
+    fi
+  done < <(read_package_names_from_file "${REQUIRED_PACKAGE_LIST}")
+
+  while IFS= read -r package_name; do
+    [[ -n "${package_name}" ]] || continue
+    if [[ -f "${LOCAL_PACKAGE_ROOT}/${package_name}/PKGBUILD" ]]; then
+      append_unique_item discovered "${package_name}"
+    fi
+  done < <(read_package_names_from_file "${REPO_ROOT}/packages.x86_64")
+
+  (( ${#discovered[@]} > 0 )) || return 0
+  printf '%s\n' "${discovered[@]}"
+}
+
+local_builds_requested() {
+  if (( BUILD_SYSTEMSETTINGS_OVERRIDE || BUILD_CALAMARES_OVERRIDE || BUILD_BROWSER_PKGS )); then
+    return 0
+  fi
+
+  (( ${#LOCAL_PACKAGES[@]} > 0 ))
+}
+
+local_repo_overrides_requested() {
+  local_builds_requested || [[ -n "${LOCAL_REPO_SOURCE_DIR}" ]]
+}
+
+package_planned_for_local_override() {
+  local package_name="$1"
+
+  array_contains "${package_name}" "${REPO_PACKAGES[@]}" && return 0
+  array_contains "${package_name}" "${AUR_PACKAGES[@]}" && return 0
+  array_contains "${package_name}" "${LOCAL_PACKAGES[@]}" && return 0
+
+  return 1
+}
+
+should_skip_generated_conf_validation_for_package() {
+  local package_name="$1"
+
+  (( CHECK_ONLY )) || return 1
+  local_repo_has_packages && return 1
+  package_planned_for_local_override "${package_name}"
+}
+
+host_package_available() {
+  local package_name="$1"
+  pacman -Si "${package_name}" >/dev/null 2>&1
+}
+
+repo_preflight_ignored_packages() {
+  local package_name=""
+  local -a ignored=()
+  local -a imported_package_names=()
+
+  for package_name in "${LOCAL_PACKAGES[@]}"; do
+    append_unique_item ignored "${package_name}"
+  done
+
+  for package_name in "${REPO_PACKAGES[@]}"; do
+    append_unique_item ignored "${package_name}"
+  done
+
+  for package_name in "${AUR_PACKAGES[@]}"; do
+    append_unique_item ignored "${package_name}"
+  done
+
+  if [[ -n "${LOCAL_REPO_SOURCE_DIR}" ]]; then
+    mapfile -t imported_package_names < <(read_prebuilt_local_repo_package_names)
+    for package_name in "${imported_package_names[@]}"; do
+      [[ -n "${package_name}" ]] || continue
+      append_unique_item ignored "${package_name}"
+    done
+  fi
+
+  (( ${#ignored[@]} > 0 )) || return 0
+  printf '%s\n' "${ignored[@]}"
+}
+
+configure_optional_builds() {
+  local browser_flag="${KESKOS_BUILD_BROWSER_PKGS:-0}"
+  local systemsettings_flag="${KESKOS_BUILD_SYSTEMSETTINGS_OVERRIDE:-0}"
+  local calamares_flag="${KESKOS_BUILD_CALAMARES_OVERRIDE:-0}"
+  local -a discovered_local_packages=()
+
+  validate_source_choice
+  if [[ "${SOURCE_CHOICE}" == "repo" ]]; then
+    BUILD_MODE="release"
+  elif [[ "${SOURCE_CHOICE}" == "local" ]]; then
+    BUILD_MODE="local-dev"
+  fi
+
+  resolve_local_package_root
+  validate_build_mode
+  parse_local_package_list
+  if (( ${#CLI_LOCAL_PACKAGES[@]} > 0 )); then
+    append_package_values LOCAL_PACKAGES "${CLI_LOCAL_PACKAGES[*]}"
+  fi
+
+  if [[ "${BUILD_MODE}" == "release" ]]; then
+    if env_flag_enabled "${browser_flag}" || env_flag_enabled "${systemsettings_flag}" || env_flag_enabled "${calamares_flag}" || [[ ${#LOCAL_PACKAGES[@]} -gt 0 ]] || [[ -n "${LOCAL_REPO_SOURCE_DIR}" ]]; then
+      fail "Release mode does not allow local package builds or [keskos-local] overrides. Use KESKOS_BUILD_MODE=local-dev for override testing."
+    fi
+    return 0
+  fi
+
+  if env_flag_enabled "${systemsettings_flag}"; then
+    BUILD_SYSTEMSETTINGS_OVERRIDE=1
+    REPO_PACKAGES+=(systemsettings)
+  fi
+
+  if env_flag_enabled "${calamares_flag}"; then
+    BUILD_CALAMARES_OVERRIDE=1
+    AUR_PACKAGES+=(calamares)
+  fi
+
+  if env_flag_enabled "${browser_flag}"; then
+    BUILD_BROWSER_PKGS=1
+    AUR_PACKAGES+=("${BROWSER_AUR_PACKAGES[@]}")
+  fi
+
+  if [[ "${SOURCE_CHOICE}" == "local" ]] && ! local_builds_requested && [[ -z "${LOCAL_REPO_SOURCE_DIR}" ]]; then
+    mapfile -t discovered_local_packages < <(discover_local_seed_overrides)
+    if (( ${#discovered_local_packages[@]} == 0 )); then
+      fail "Local package source mode was requested, but no matching local package folders were found under ${LOCAL_PACKAGE_ROOT}. Use --local-package-root, --local-package, or choose --package-source repo."
+    fi
+    LOCAL_PACKAGES=("${discovered_local_packages[@]}")
+    AUTO_DISCOVERED_LOCAL_PACKAGES=1
+  fi
+
+  if array_contains "keskos-calamares-branding" "${LOCAL_PACKAGES[@]}" && ! host_package_available "calamares"; then
+    if (( BUILD_CALAMARES_OVERRIDE == 0 )); then
+      BUILD_CALAMARES_OVERRIDE=1
+      append_unique_item AUR_PACKAGES "calamares"
+      log "Host repos do not provide calamares; enabling the local patched calamares override for keskos-calamares-branding."
+    fi
+  fi
+}
+
+print_build_mode_summary() {
+  local priority="[keskos] -> [core] -> [extra]"
+
+  if [[ "${BUILD_MODE}" == "local-dev" ]]; then
+    priority="[keskos-local] -> ${priority}"
+  fi
+
+  log "Build mode: ${BUILD_MODE}"
+  if [[ "${SOURCE_CHOICE}" == "local" ]]; then
+    log "Package source selection: local folders with repo fallback"
+  else
+    log "Package source selection: published pacman repo"
+  fi
+  log "Package source priority: ${priority}"
+
+  if [[ "${BUILD_MODE}" == "release" ]]; then
+    log "Local package builds: disabled"
+    log "Local package repo overrides: disabled"
+    log "Browser package builds: disabled"
+    return 0
+  fi
+
+  if (( BUILD_SYSTEMSETTINGS_OVERRIDE || BUILD_CALAMARES_OVERRIDE || BUILD_BROWSER_PKGS || ${#LOCAL_PACKAGES[@]} > 0 )); then
+    log "Local package builds are enabled for this run."
+  else
+    log "Local package builds are disabled for this local-dev run."
+  fi
+
+  if (( BUILD_SYSTEMSETTINGS_OVERRIDE )); then
+    log "Local override enabled: patched systemsettings"
+  fi
+
+  if (( BUILD_CALAMARES_OVERRIDE )); then
+    log "Local override enabled: patched calamares"
+  fi
+
+  if (( BUILD_BROWSER_PKGS )); then
+    log "Local override enabled: browser AUR packages (${BROWSER_AUR_PACKAGES[*]})"
+  else
+    log "Browser package builds: disabled"
+  fi
+
+  if (( ${#LOCAL_PACKAGES[@]} > 0 )); then
+    log "Local package builds requested from ${LOCAL_PACKAGE_ROOT}: ${LOCAL_PACKAGES[*]}"
+    if (( AUTO_DISCOVERED_LOCAL_PACKAGES )); then
+      log "Those local packages were auto-discovered from the ISO seed and required package list."
+    fi
+  fi
+
+  if [[ -n "${LOCAL_REPO_SOURCE_DIR}" ]]; then
+    log "Prebuilt local override import directory: ${LOCAL_REPO_SOURCE_DIR}"
+  fi
+
+  if (( CHECK_ONLY )); then
+    log "Check-only mode: mkarchiso and optional local override builds will be skipped."
+  fi
 }
 
 cleanup_safe_build_root() {
@@ -162,20 +560,28 @@ check_arch_host() {
 check_dependencies() {
   local deps=(
     "mkarchiso:archiso"
-    "makepkg:base-devel"
-    "repo-add:pacman-contrib"
     "grub-install:grub"
     "syslinux:syslinux"
-    "curl:curl"
-    "git:git"
     "awk:gawk"
     "sed:sed"
     "install:coreutils"
-    "bsdtar:libarchive"
-    "patch:patch"
-    "gpg:gnupg"
     "python3:python"
     "sudo:sudo"
+  )
+  local local_repo_deps=(
+    "repo-add:pacman-contrib"
+  )
+  local local_makepkg_deps=(
+    "makepkg:base-devel"
+  )
+  local local_vcs_deps=(
+    "git:git"
+    "patch:patch"
+    "gpg:gnupg"
+  )
+  local local_browser_deps=(
+    "curl:curl"
+    "bsdtar:libarchive"
   )
   local dep
   local command_name
@@ -186,6 +592,137 @@ check_dependencies() {
     package_hint="${dep#*:}"
     require_command "$command_name" "$package_hint"
   done
+
+  if local_repo_overrides_requested; then
+    for dep in "${local_repo_deps[@]}"; do
+      command_name="${dep%%:*}"
+      package_hint="${dep#*:}"
+      require_command "$command_name" "$package_hint"
+    done
+  fi
+
+  if local_builds_requested; then
+    for dep in "${local_makepkg_deps[@]}"; do
+      command_name="${dep%%:*}"
+      package_hint="${dep#*:}"
+      require_command "$command_name" "$package_hint"
+    done
+  fi
+
+  if (( BUILD_SYSTEMSETTINGS_OVERRIDE || BUILD_CALAMARES_OVERRIDE || BUILD_BROWSER_PKGS )); then
+    for dep in "${local_vcs_deps[@]}"; do
+      command_name="${dep%%:*}"
+      package_hint="${dep#*:}"
+      require_command "$command_name" "$package_hint"
+    done
+  fi
+
+  if (( BUILD_BROWSER_PKGS )); then
+    for dep in "${local_browser_deps[@]}"; do
+      command_name="${dep%%:*}"
+      package_hint="${dep#*:}"
+      require_command "$command_name" "$package_hint"
+    done
+  fi
+}
+
+validate_repo_inputs() {
+  local required_path=""
+  local required_paths=(
+    "${REPO_ROOT}/packages.x86_64"
+    "${REPO_ROOT}/pacman.conf"
+    "${REPO_ROOT}/profiledef.sh"
+    "${REPO_ROOT}/airootfs"
+    "${REPO_ROOT}/calamares"
+    "${REPO_CHECK_SCRIPT}"
+    "${REQUIRED_PACKAGE_LIST}"
+  )
+
+  for required_path in "${required_paths[@]}"; do
+    [[ -e "${required_path}" ]] || fail "Required repo input is missing: ${required_path}"
+  done
+}
+
+validate_packages_seed() {
+  local seed_file="${REPO_ROOT}/packages.x86_64"
+  local required_package=""
+  local forbidden_package=""
+  local required_packages=(
+    "keskos-release"
+    "keskos-keyring"
+    "keskos-mirrorlist"
+    "keskos-tools"
+    "keskos-branding"
+    "keskos-theme"
+    "keskos-settings"
+    "keskos-welcome"
+    "keskos-browser-startpage"
+    "keskos-core-meta"
+    "keskos-desktop-meta"
+    "keskos-system-tools-meta"
+    "networkmanager"
+    "plasma-nm"
+    "xdg-utils"
+    "calamares"
+    "iptables"
+    "noto-fonts"
+    "pipewire-jack"
+    "qt6-multimedia-ffmpeg"
+  )
+  local forbidden_packages=(
+    "brave-bin"
+    "librewolf-bin"
+    "zen-browser-bin"
+    "keskos-browsers-meta"
+  )
+
+  [[ -f "${seed_file}" ]] || fail "ISO seed list is missing: ${seed_file}"
+
+  for required_package in "${required_packages[@]}"; do
+    grep -Fxq "${required_package}" "${seed_file}" || fail "packages.x86_64 is missing required package: ${required_package}"
+  done
+
+  for forbidden_package in "${forbidden_packages[@]}"; do
+    if grep -Fxq "${forbidden_package}" "${seed_file}"; then
+      fail "packages.x86_64 still contains a package that should not be preinstalled: ${forbidden_package}"
+    fi
+  done
+}
+
+validate_local_override_sources() {
+  local package_name=""
+
+  if [[ "${BUILD_MODE}" == "local-dev" || "${SOURCE_CHOICE}" == "local" || -n "${LOCAL_REPO_SOURCE_DIR}" ]]; then
+    [[ -d "${LOCAL_PACKAGE_ROOT}" ]] || fail "Local package root was not found: ${LOCAL_PACKAGE_ROOT}"
+  fi
+
+  for package_name in "${LOCAL_PACKAGES[@]}"; do
+    [[ -f "${LOCAL_PACKAGE_ROOT}/${package_name}/PKGBUILD" ]] || fail "Requested local override package is missing: ${LOCAL_PACKAGE_ROOT}/${package_name}/PKGBUILD"
+  done
+}
+
+run_keskos_repo_preflight() {
+  local -a check_args=()
+  local -a ignored_packages=()
+  local package_name=""
+
+  if (( SKIP_REPO_CHECK )); then
+    warn "Skipping the KeskOS package availability preflight."
+    return 0
+  fi
+
+  [[ -x "${REPO_CHECK_SCRIPT}" ]] || fail "Preflight helper is missing or not executable: ${REPO_CHECK_SCRIPT}"
+  if local_repo_overrides_requested; then
+    mapfile -t ignored_packages < <(repo_preflight_ignored_packages)
+    if (( ${#ignored_packages[@]} > 0 )); then
+      warn "Skipping public repo preflight checks for locally overridden packages: ${ignored_packages[*]}"
+      for package_name in "${ignored_packages[@]}"; do
+        check_args+=(--ignore-package "${package_name}")
+      done
+    fi
+  fi
+  log "Checking that required KeskOS packages are available from downloads.keskos.org..."
+  "${REPO_CHECK_SCRIPT}" "${check_args[@]}"
 }
 
 prepare_workdirs() {
@@ -193,7 +730,8 @@ prepare_workdirs() {
   cleanup_safe_build_root
   mkdir -p "$STAGE_DIR" "$ARCHISO_WORK_DIR"
   mkdir -p "$LOCAL_REPO_DIR"
-  mkdir -p "$AUR_BUILD_ROOT" "$AUR_PKGDEST"
+  mkdir -p "$AUR_BUILD_ROOT" "$REPO_BUILD_ROOT" "$AUR_PKGDEST"
+  mkdir -p "$PACMAN_SYNC_DB_PATH" "$PACMAN_SYNC_CACHE_DIR"
   mkdir -p "$GNUPG_BUILD_HOME"
   chmod 700 "$GNUPG_BUILD_HOME"
 
@@ -201,11 +739,6 @@ prepare_workdirs() {
   if [[ "$REPO_ROOT" == *" "* ]]; then
     log "Repo path contains spaces; staging Archiso and AUR builds outside the repo to avoid makepkg/CMake and chroot path issues."
   fi
-}
-
-package_name_from_archive() {
-  local archive_path="$1"
-  bsdtar -xOf "$archive_path" .PKGINFO 2>/dev/null | awk -F ' = ' '$1 == "pkgname" { print $2; exit }'
 }
 
 init_build_keyring() {
@@ -255,9 +788,24 @@ import_pkgbuild_keys() {
     done
 
     if (( imported == 0 )); then
-      warn "Could not import PGP key ${key} for ${package_name}; build may require the browser-package fallback."
+      warn "Could not import PGP key ${key} for ${package_name}; build may require a later retry or skippgpcheck fallback."
     fi
   done
+}
+
+copy_package_archives_to_local_repo() {
+  local package_name="$1"
+  local source_dir="$2"
+  local -a built_files=()
+
+  mapfile -t built_files < <(
+    find "${source_dir}" -maxdepth 1 -type f \
+      \( -name "${package_name}-*.pkg.tar.zst" -o -name "${package_name}-*.pkg.tar.xz" -o -name "${package_name}-*.pkg.tar" \) \
+      | sort
+  )
+
+  (( ${#built_files[@]} > 0 )) || fail "No built package archive was found for ${package_name} in ${source_dir}"
+  cp -f "${built_files[@]}" "${LOCAL_REPO_DIR}/"
 }
 
 zen_latest_release_tag() {
@@ -328,6 +876,81 @@ path.write_text(text, encoding="utf-8")
 PY
 }
 
+patch_systemsettings_pkgbuild() {
+  local package_dir="$1"
+
+  log "Patching Arch systemsettings packaging to apply KeskOS sidebar QML overrides..."
+
+  mkdir -p "${package_dir}/keskos_systemsettings_qml"
+  install -m 755 "${REPO_ROOT}/patches/systemsettings/keskos_systemsettings_ui.py" \
+    "${package_dir}/keskos_systemsettings_ui.py"
+  install -m 644 "${REPO_ROOT}/patches/systemsettings/keskos_systemsettings_qml/CategoriesPage.qml" \
+    "${package_dir}/keskos_systemsettings_qml/CategoriesPage.qml"
+  install -m 644 "${REPO_ROOT}/patches/systemsettings/keskos_systemsettings_qml/CategoryItem.qml" \
+    "${package_dir}/keskos_systemsettings_qml/CategoryItem.qml"
+  install -m 644 "${REPO_ROOT}/patches/systemsettings/keskos_systemsettings_qml/HamburgerMenuButton.qml" \
+    "${package_dir}/keskos_systemsettings_qml/HamburgerMenuButton.qml"
+  install -m 644 "${REPO_ROOT}/patches/systemsettings/keskos_systemsettings_qml/SubCategoryPage.qml" \
+    "${package_dir}/keskos_systemsettings_qml/SubCategoryPage.qml"
+
+  python3 - "$package_dir/PKGBUILD" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+prepare_snippet = """prepare() {\n  python3 \"$startdir/keskos_systemsettings_ui.py\" \"$srcdir/$pkgname-$pkgver\"\n}\n\n"""
+
+if prepare_snippet in text:
+    path.write_text(text, encoding="utf-8")
+    raise SystemExit(0)
+
+if re.search(r"^prepare\(\)\s*\{", text, flags=re.MULTILINE):
+    raise SystemExit("systemsettings PKGBUILD already defines prepare(); update patch_systemsettings_pkgbuild before continuing.")
+
+text, count = re.subn(r"^pkgrel=(.+)$", lambda match: f"pkgrel={match.group(1)}.1", text, count=1, flags=re.MULTILINE)
+if count != 1:
+    raise SystemExit("Failed to bump systemsettings pkgrel in PKGBUILD.")
+
+marker = "build() {\n"
+if marker not in text:
+    raise SystemExit("Failed to locate build() in systemsettings PKGBUILD.")
+text = text.replace(marker, prepare_snippet + marker, 1)
+
+path.write_text(text, encoding="utf-8")
+PY
+}
+
+build_repo_package() {
+  local package_name="$1"
+  local package_dir="${REPO_BUILD_ROOT}/${package_name}"
+  local package_repo_url="https://gitlab.archlinux.org/archlinux/packaging/packages/${package_name}.git"
+
+  if [[ ! -d "$package_dir/.git" ]]; then
+    log "Cloning Arch package ${package_name}..."
+    git clone --depth 1 "$package_repo_url" "$package_dir"
+  else
+    log "Refreshing Arch package ${package_name}..."
+    git -C "$package_dir" fetch origin
+    git -C "$package_dir" reset --hard origin/main
+  fi
+
+  if [[ "$package_name" == "systemsettings" ]]; then
+    patch_systemsettings_pkgbuild "$package_dir"
+  fi
+
+  log "Building ${package_name} for the local ISO repository..."
+  (
+    cd "$package_dir"
+    import_pkgbuild_keys "$package_name" "$package_dir"
+    GNUPGHOME="$GNUPG_BUILD_HOME" PKGDEST="${AUR_PKGDEST}" \
+      makepkg --syncdeps --needed --noconfirm --cleanbuild --clean
+  )
+
+  copy_package_archives_to_local_repo "$package_name" "$AUR_PKGDEST"
+}
+
 build_aur_package() {
   local package_name="$1"
   local package_dir="${AUR_BUILD_ROOT}/${package_name}"
@@ -342,7 +965,7 @@ build_aur_package() {
   fi
 
   if [[ "$package_name" == "calamares" ]]; then
-    log "Patching AUR calamares PKGBUILD to keep packagechooser modules enabled and apply KeskOS UI polish..."
+    log "Patching AUR calamares PKGBUILD to apply KeskOS UI polish and compatibility fixes..."
     install -m 644 "${REPO_ROOT}/calamares/patches/keskos_calamares_ui.py" \
       "${package_dir}/keskos_calamares_ui.py"
     python3 - "$package_dir/PKGBUILD" <<'PY'
@@ -384,180 +1007,433 @@ PY
     fi
   )
 
-  find "$AUR_PKGDEST" -maxdepth 1 -type f -name "${package_name}-*.pkg.tar.*" -exec cp -f {} "$LOCAL_REPO_DIR/" \;
+  copy_package_archives_to_local_repo "$package_name" "$AUR_PKGDEST"
 }
 
-stage_local_package_archives() {
-  local package_dir=""
-  local archive_path=""
-  local package_name=""
-  local required_name=""
-  local staged_count=0
-  local -a staged_package_names=()
+build_local_package() {
+  local package_name="$1"
+  local source_dir="${LOCAL_PACKAGE_ROOT}/${package_name}"
+  local resolved_source_dir=""
+  local build_root="${SAFE_BUILD_ROOT}/local-packages"
+  local build_dir="${build_root}/${package_name}"
+  local workspace_root=""
+  local -a makepkg_env=()
 
-  [[ "$USE_LOCAL_PACKAGES" -eq 1 ]] || return 0
+  [[ -e "${source_dir}" ]] || fail "Local package source was not found: ${source_dir}"
+  resolved_source_dir="$(readlink -f "${source_dir}")"
+  [[ -f "${resolved_source_dir}/PKGBUILD" ]] || fail "Local package source was not found: ${resolved_source_dir}"
 
-  log "Staging local KeskOS package archives into the ISO-local repository..."
-  for package_dir in "${LOCAL_PACKAGE_DIRS[@]}"; do
-    if [[ ! -d "$package_dir" ]]; then
-      warn "Local package directory not found: ${package_dir}"
-      continue
+  if [[ -d "${LOCAL_PACKAGE_ROOT}/_lib" ]]; then
+    workspace_root="$(cd "${LOCAL_PACKAGE_ROOT}/.." && pwd)"
+  fi
+
+  rm -rf "$build_dir"
+  mkdir -p "${build_root}"
+  if [[ -d "${LOCAL_PACKAGE_ROOT}/_lib" ]]; then
+    rm -rf "${build_root}/_lib"
+    cp -a "${LOCAL_PACKAGE_ROOT}/_lib" "${build_root}/_lib"
+  fi
+  cp -a "${resolved_source_dir}" "$build_dir"
+
+  if [[ "${resolved_source_dir}" == "${DESKTOP_PACKAGE_ROOT}/"* ]]; then
+    sed -i 's#\${startdir}/src#\${startdir}/keskos-src#g' "${build_dir}/PKGBUILD"
+    if [[ -d "${build_dir}/src" ]]; then
+      mv "${build_dir}/src" "${build_dir}/keskos-src"
+    else
+      ln -sfn "${REPO_ROOT}" "${build_dir}/keskos-src"
     fi
+  fi
 
-    while IFS= read -r archive_path; do
-      [[ -n "$archive_path" ]] || continue
-      cp -f "$archive_path" "$LOCAL_REPO_DIR/"
-      package_name="$(package_name_from_archive "$archive_path" || true)"
-      [[ -n "$package_name" ]] && staged_package_names+=("$package_name")
-      ((staged_count += 1))
-    done < <(find "$package_dir" -maxdepth 1 -type f -name '*.pkg.tar.*' ! -name '*.sig' | sort)
-  done
+  if local_repo_has_packages; then
+    refresh_local_repo
+    generate_local_build_pacman_conf
+    sync_local_build_repo
+    makepkg_env+=("PACMAN=${LOCAL_BUILD_PACMAN_WRAPPER}")
+  fi
 
-  (( staged_count > 0 )) || fail "Local package mode was enabled but no local package archives were found. Build the package repos first or pass --local-package-dir / KESKOS_LOCAL_PACKAGE_DIRS."
+  if [[ -n "${workspace_root}" ]]; then
+    makepkg_env+=("KESKOS_REPO_ROOT=${workspace_root}")
+  fi
 
-  for required_name in "${LOCAL_INSTALL_PACKAGES[@]}"; do
-    if ! array_contains "$required_name" "${staged_package_names[@]}"; then
-      fail "Local package mode expected package '${required_name}' in the staged local archives, but it was not found. Check your local builds or override the package set with --local-install-package / KESKOS_LOCAL_INSTALL_PACKAGES."
-    fi
-  done
+  log "Building local package ${package_name}..."
+  (
+    cd "$build_dir"
+    env PKGDEST="${AUR_PKGDEST}" "${makepkg_env[@]}"       makepkg --syncdeps --needed --noconfirm --cleanbuild --clean --rmdeps
+  )
+
+  copy_package_archives_to_local_repo "$package_name" "$AUR_PKGDEST"
+  refresh_local_repo
 }
 
 refresh_local_repo() {
-  local -a repo_archives=()
+  local -a repo_packages=()
+
+  mapfile -t repo_packages < <(
+    find "${LOCAL_REPO_DIR}" -maxdepth 1 -type f \
+      \( -name '*.pkg.tar.zst' -o -name '*.pkg.tar.xz' -o -name '*.pkg.tar' \) \
+      | sort
+  )
+
+  if (( ${#repo_packages[@]} == 0 )); then
+    rm -f "${LOCAL_REPO_DIR}"/keskos-local.db* "${LOCAL_REPO_DIR}"/keskos-local.files*
+    return 0
+  fi
 
   log "Refreshing the local pacman repository..."
   rm -f "${LOCAL_REPO_DIR}"/keskos-local.db* "${LOCAL_REPO_DIR}"/keskos-local.files*
-  mapfile -t repo_archives < <(find "${LOCAL_REPO_DIR}" -maxdepth 1 -type f -name '*.pkg.tar.*' ! -name '*.sig' | sort)
-  (( ${#repo_archives[@]} > 0 )) || fail "No package archives were staged into ${LOCAL_REPO_DIR}"
-  repo-add "${LOCAL_REPO_DIR}/keskos-local.db.tar.gz" "${repo_archives[@]}"
+  repo-add "${LOCAL_REPO_DIR}/keskos-local.db.tar.gz" "${repo_packages[@]}"
+}
+
+local_repo_has_packages() {
+  compgen -G "${LOCAL_REPO_DIR}/*.pkg.tar.zst" >/dev/null || \
+    compgen -G "${LOCAL_REPO_DIR}/*.pkg.tar.xz" >/dev/null || \
+    compgen -G "${LOCAL_REPO_DIR}/*.pkg.tar" >/dev/null
+}
+
+import_local_repo_packages() {
+  local -a imported_files=()
+
+  [[ -n "${LOCAL_REPO_SOURCE_DIR}" ]] || return 0
+  [[ -d "${LOCAL_REPO_SOURCE_DIR}" ]] || fail "Local repo import directory was not found: ${LOCAL_REPO_SOURCE_DIR}"
+
+  mapfile -t imported_files < <(
+    find "${LOCAL_REPO_SOURCE_DIR}" -maxdepth 1 -type f \
+      \( -name '*.pkg.tar.zst' -o -name '*.pkg.tar.xz' -o -name '*.pkg.tar' \) \
+      | sort
+  )
+
+  if (( ${#imported_files[@]} == 0 )); then
+    warn "No prebuilt package archives were found in ${LOCAL_REPO_SOURCE_DIR}"
+    return 0
+  fi
+
+  log "Importing prebuilt local override packages from ${LOCAL_REPO_SOURCE_DIR}..."
+  cp -f "${imported_files[@]}" "${LOCAL_REPO_DIR}/"
+  refresh_local_repo
+}
+
+write_generated_pacman_conf() {
+  local output_path="$1"
+  local mirrorlist_output="$2"
+  local local_repo_uri=""
+  local enable_local_repo=0
+  local mirrorlist_source="${KESKOS_OVERRIDE_MIRRORLIST:-/etc/pacman.d/mirrorlist}"
+
+  [[ -f "$mirrorlist_source" ]] || fail "Pacman mirrorlist source was not found: ${mirrorlist_source}"
+  grep -Eq '^[[:space:]]*Server[[:space:]]*=' "$mirrorlist_source" || fail "Pacman mirrorlist source has no usable Server entries: ${mirrorlist_source}"
+
+  install -m 644 "$mirrorlist_source" "${mirrorlist_output}"
+  if local_repo_has_packages; then
+    enable_local_repo=1
+    local_repo_uri="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve().as_uri())' "${LOCAL_REPO_DIR}")"
+  fi
+
+  python3 - "${REPO_ROOT}/pacman.conf" "${output_path}" "${local_repo_uri}" "${mirrorlist_output}" "${enable_local_repo}" <<'PY'
+from pathlib import Path
+import sys
+
+template_path = Path(sys.argv[1])
+output_path = Path(sys.argv[2])
+local_repo_uri = sys.argv[3]
+mirrorlist_path = sys.argv[4]
+enable_local_repo = sys.argv[5] == "1"
+
+lines = template_path.read_text(encoding="utf-8").splitlines(keepends=True)
+output_lines = []
+skipping_local_repo = False
+
+for line in lines:
+    stripped = line.strip()
+    if stripped == "[keskos-local]" and not enable_local_repo:
+        skipping_local_repo = True
+        continue
+    if skipping_local_repo and stripped.startswith("[") and stripped.endswith("]"):
+        skipping_local_repo = False
+    if skipping_local_repo:
+        continue
+    if enable_local_repo:
+        line = line.replace("__KESKOS_LOCAL_REPO_URI__", local_repo_uri)
+    output_lines.append(line.replace("/etc/pacman.d/mirrorlist", mirrorlist_path))
+
+output_path.write_text("".join(output_lines), encoding="utf-8")
+PY
+}
+
+generate_local_build_pacman_conf() {
+  log "Generating a pacman.conf for local package dependency resolution..."
+  write_generated_pacman_conf "${LOCAL_BUILD_PACMAN_CONF}" "${LOCAL_BUILD_MIRRORLIST}"
+  cat >"${LOCAL_BUILD_PACMAN_WRAPPER}" <<EOF
+#!/usr/bin/env bash
+exec /usr/bin/pacman --config "${LOCAL_BUILD_PACMAN_CONF}" "\$@"
+EOF
+  chmod +x "${LOCAL_BUILD_PACMAN_WRAPPER}"
+}
+
+sync_local_build_repo() {
+  local -a sudo_env=()
+
+  build_sudo_env sudo_env
+  log "Syncing local package dependency repositories..."
+  sudo env "${sudo_env[@]}" "${LOCAL_BUILD_PACMAN_WRAPPER}" -Sy --noconfirm
 }
 
 generate_pacman_conf() {
-  local local_repo_uri=""
-  log "Generating a pacman.conf that points at the local Calamares repository..."
-  local_repo_uri="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve().as_uri())' "${LOCAL_REPO_DIR}")"
-  sed "s|__KESKOS_LOCAL_REPO_URI__|${local_repo_uri}|g" \
-    "${REPO_ROOT}/pacman.conf" >"${GENERATED_PACMAN_CONF}"
+  if local_repo_has_packages; then
+    log "Generating a profile-local pacman.conf that prefers [keskos-local] overrides before [keskos]..."
+  else
+    log "Generating a profile-local pacman.conf that consumes the published KeskOS pacman repo..."
+  fi
+  write_generated_pacman_conf "${GENERATED_PACMAN_CONF}" "${GENERATED_MIRRORLIST}"
+}
+
+validate_generated_pacman_conf() {
+  [[ -f "${GENERATED_PACMAN_CONF}" ]] || fail "Generated pacman.conf is missing: ${GENERATED_PACMAN_CONF}"
+  [[ -s "${GENERATED_PACMAN_CONF}" ]] || fail "Generated pacman.conf is empty: ${GENERATED_PACMAN_CONF}"
+  [[ -f "${GENERATED_MIRRORLIST}" ]] || fail "Generated pacman mirrorlist is missing: ${GENERATED_MIRRORLIST}"
+  [[ -s "${GENERATED_MIRRORLIST}" ]] || fail "Generated pacman mirrorlist is empty: ${GENERATED_MIRRORLIST}"
+
+  python3 - "${GENERATED_PACMAN_CONF}" <<'PY'
+from pathlib import Path
+import sys
+
+config_path = Path(sys.argv[1])
+text = config_path.read_text(encoding="utf-8")
+include_paths: list[str] = []
+
+for raw_line in text.splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#"):
+        continue
+    if line.lower().startswith("include"):
+        _, _, include_value = line.partition("=")
+        include_value = include_value.strip()
+        if not include_value:
+            raise SystemExit(f"Generated pacman.conf has an empty Include directive: {config_path}")
+        include_paths.append(include_value)
+
+for include_path in include_paths:
+    if not Path(include_path).is_file():
+        raise SystemExit(f"Generated pacman.conf references a missing Include path: {include_path}")
+PY
+}
+
+preflight_repo_sync() {
+  local -a sudo_env=()
+  local attempt=1
+  local max_attempts="${KESKOS_PACMAN_SYNC_ATTEMPTS:-3}"
+
+  validate_generated_pacman_conf
+  build_sudo_env sudo_env
+  sudo mkdir -p "$PACMAN_SYNC_DB_PATH" "$PACMAN_SYNC_CACHE_DIR"
+
+  while (( attempt <= max_attempts )); do
+    log "Preflighting pacman repository sync (attempt ${attempt}/${max_attempts})..."
+    if sudo env "${sudo_env[@]}" pacman \
+      --config "${GENERATED_PACMAN_CONF}" \
+      --dbpath "${PACMAN_SYNC_DB_PATH}" \
+      --cachedir "${PACMAN_SYNC_CACHE_DIR}" \
+      -Sy --noconfirm; then
+      log "Pacman repository sync preflight succeeded."
+      return 0
+    fi
+
+    if (( attempt == max_attempts )); then
+      fail "Pacman repository sync failed after ${max_attempts} attempts. On WSL, check DNS resolution, proxy settings, and mirror reachability."
+    fi
+
+    warn "Pacman repository sync preflight failed. Retrying in 5 seconds..."
+    sleep 5
+    attempt=$((attempt + 1))
+  done
+}
+
+validate_required_packages_in_generated_conf() {
+  local package_name=""
+  local -a packages=()
+  local -a missing=()
+  local -a sudo_env=()
+  local skipped_local_override_checks=0
+
+  [[ -f "${REQUIRED_PACKAGE_LIST}" ]] || fail "Required package list was not found: ${REQUIRED_PACKAGE_LIST}"
+
+  mapfile -t packages < <(awk '
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    { print $1 }
+  ' "${REQUIRED_PACKAGE_LIST}")
+
+  (( ${#packages[@]} > 0 )) || fail "No required packages were found in ${REQUIRED_PACKAGE_LIST}"
+
+  build_sudo_env sudo_env
+  log "Validating required KeskOS packages through the generated pacman.conf..."
+
+  for package_name in "${packages[@]}"; do
+    if should_skip_generated_conf_validation_for_package "${package_name}"; then
+      skipped_local_override_checks=1
+      log "Skipping generated pacman.conf validation for ${package_name} because check-only mode skipped its local override build."
+      continue
+    fi
+
+    if ! sudo env "${sudo_env[@]}" pacman \
+      --config "${GENERATED_PACMAN_CONF}" \
+      --dbpath "${PACMAN_SYNC_DB_PATH}" \
+      -Si "${package_name}" >/dev/null 2>&1; then
+      missing+=("${package_name}")
+    fi
+  done
+
+  if (( ${#missing[@]} > 0 )); then
+    printf '[keskos-build] missing required package in generated pacman configuration: %s\n' "${missing[@]}" >&2
+    fail "Required KeskOS packages could not be resolved through the generated pacman.conf"
+  fi
+
+  if (( skipped_local_override_checks )); then
+    warn "Check-only mode skipped resolution checks for packages that would normally be built into [keskos-local]. Run without --check to fully validate those local overrides."
+  fi
+}
+
+validate_seed_packages_in_generated_conf() {
+  local package_name=""
+  local -a packages=()
+  local -a missing=()
+  local -a sudo_env=()
+  local skipped_local_override_checks=0
+
+  mapfile -t packages < <(read_package_names_from_file "${REPO_ROOT}/packages.x86_64")
+  (( ${#packages[@]} > 0 )) || fail "No ISO seed packages were found in ${REPO_ROOT}/packages.x86_64"
+
+  build_sudo_env sudo_env
+  log "Validating ISO seed package resolution through the generated pacman.conf..."
+
+  for package_name in "${packages[@]}"; do
+    if should_skip_generated_conf_validation_for_package "${package_name}"; then
+      skipped_local_override_checks=1
+      log "Skipping generated pacman.conf validation for ${package_name} because check-only mode skipped its local override build."
+      continue
+    fi
+
+    if ! sudo env "${sudo_env[@]}" pacman \
+      --config "${GENERATED_PACMAN_CONF}" \
+      --dbpath "${PACMAN_SYNC_DB_PATH}" \
+      -Si "${package_name}" >/dev/null 2>&1; then
+      missing+=("${package_name}")
+    fi
+  done
+
+  if (( ${#missing[@]} > 0 )); then
+    printf '[keskos-build] missing ISO seed package in generated pacman configuration: %s\n' "${missing[@]}" >&2
+
+    if array_contains "calamares" "${missing[@]}"; then
+      fail "calamares is not available from the generated pacman.conf repos. Release mode can only use published packages from [keskos]/[core]/[extra], so either publish a calamares package that the ISO can resolve or rerun with --package-source local to build the patched calamares override for testing."
+    fi
+
+    fail "packages.x86_64 contains packages that could not be resolved through the generated pacman.conf. Publish them to [keskos] or build them into [keskos-local] with --package-source local."
+  fi
+
+  if (( skipped_local_override_checks )); then
+    warn "Check-only mode skipped seed-package resolution checks for packages that would normally be built into [keskos-local]. Run without --check to fully validate those local overrides."
+  fi
 }
 
 stage_profile_basics() {
-  local package_name=""
-  local staged_packages_file="${STAGE_DIR}/packages.x86_64"
-
   log "Staging the Archiso profile..."
   cp -a "${REPO_ROOT}/airootfs" "${STAGE_DIR}/"
   cp -a "${REPO_ROOT}/grub" "${STAGE_DIR}/"
   cp -a "${REPO_ROOT}/syslinux" "${STAGE_DIR}/"
   cp -a "${REPO_ROOT}/efiboot" "${STAGE_DIR}/"
   install -m 644 "${REPO_ROOT}/profiledef.sh" "${STAGE_DIR}/profiledef.sh"
-  install -m 644 "${REPO_ROOT}/packages.x86_64" "${staged_packages_file}"
+  install -m 644 "${REPO_ROOT}/packages.x86_64" "${STAGE_DIR}/packages.x86_64"
+  install -d -m 1777 "${STAGE_DIR}/airootfs/tmp" "${STAGE_DIR}/airootfs/var/tmp"
 
-  if [[ "$USE_LOCAL_PACKAGES" -eq 1 ]]; then
-    log "Appending local install packages to the live package seed..."
-    for package_name in "${LOCAL_INSTALL_PACKAGES[@]}"; do
-      if ! grep -qxF "$package_name" "${staged_packages_file}"; then
-        printf '%s\n' "$package_name" >>"${staged_packages_file}"
-      fi
-    done
-  fi
+  python3 - "${STAGE_DIR}/airootfs/etc/os-release" "${ISO_VERSION}" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+iso_version = sys.argv[2].strip() or "rolling"
+lines = []
+seen = set()
+
+for raw_line in path.read_text(encoding="utf-8").splitlines():
+    if raw_line.startswith("BUILD_ID="):
+        lines.append(f'BUILD_ID="{iso_version}"')
+        seen.add("BUILD_ID")
+    elif raw_line.startswith("IMAGE_BUILD_DATE="):
+        lines.append(f'IMAGE_BUILD_DATE="{iso_version}"')
+        seen.add("IMAGE_BUILD_DATE")
+    else:
+        lines.append(raw_line)
+
+for key, value in (
+    ("BUILD_ID", iso_version),
+    ("IMAGE_BUILD_DATE", iso_version),
+):
+    if key not in seen:
+        lines.append(f'{key}="{value}"')
+
+path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
 }
 
-stage_source_tree() {
-  local source_root="${STAGE_DIR}/airootfs/usr/local/share/keskos/source"
-  rm -rf "$source_root"
-  mkdir -p "$source_root"
-
-  cp -a "${REPO_ROOT}/assets" "$source_root/"
-  cp -a "${REPO_ROOT}/calamares" "$source_root/"
-  cp -a "${REPO_ROOT}/configs" "$source_root/"
-  cp -a "${REPO_ROOT}/desktop" "$source_root/"
-  cp -a "${REPO_ROOT}/browser-home" "$source_root/"
-  cp -a "${REPO_ROOT}/docs" "$source_root/"
-  install -m 644 "${REPO_ROOT}/assets/spinner.png" "$source_root/spinner.png"
-  install -m 644 "${REPO_ROOT}/assets/kesk_os_logo_text.png" "$source_root/kesk_os_logo_text.png"
-  install -m 644 "${REPO_ROOT}/assets/kesk_os_logo-removebg.png" "$source_root/kesk_os_logo-removebg.png"
-}
-
-stage_live_system_assets() {
+prune_packaged_live_overlays() {
   local root="${STAGE_DIR}/airootfs"
+  # These paths are supplied by published `keskos-*` packages and should not be
+  # copied from the ISO repo into the staged airootfs unless we intentionally
+  # need a temporary local override.
+  local -a migrated_paths=(
+    "etc/xdg/autostart/dunst.desktop"
+    "etc/xdg/autostart/keskos-first-run.desktop"
+    "etc/xdg/autostart/keskos-quickshell.desktop"
+    "etc/skel/.config/autostart/keskos-display-watch.desktop"
+    "etc/skel/.config/autostart/keskos-first-run.desktop"
+    "etc/skel/.config/autostart/keskos-quickshell.desktop"
+    "etc/skel/.config/dunst/dunstrc"
+    "etc/skel/Desktop/Install KeskOS.desktop"
+    "usr/bin/kesk"
+    "usr/bin/kesk-apply-theme"
+    "usr/bin/kesk-hide-kcms"
+    "usr/bin/kesk-list-kcms"
+    "usr/bin/kesk-restore-kcms"
+    "usr/bin/kesk-theme-status"
+    "usr/bin/keskos-first-run"
+    "usr/bin/keskos-fix-launcher"
+    "usr/bin/keskos-launcher-switch"
+    "usr/bin/keskos-reset-panel"
+    "usr/bin/keskos-shell"
+    "usr/lib/calamares/modules/keskoschoices"
+    "usr/lib/kesk"
+    "usr/lib/keskos-first-run"
+    "usr/lib/keskos-installer/apply-install-choices.sh"
+    "usr/local/bin/keskos-about"
+    "usr/local/bin/keskos-configure-user"
+    "usr/local/bin/keskos-display-watch"
+    "usr/local/bin/keskos-open-installer"
+    "usr/local/bin/keskos-open-installer-log"
+    "usr/local/bin/keskos-postinstall-root"
+    "usr/local/bin/keskos-prepare-target-root"
+    "usr/local/bin/keskos-quickshell-data"
+    "usr/local/bin/keskos-select-resolution"
+    "usr/local/bin/keskos-session-start"
+    "usr/local/bin/keskos-shell"
+    "usr/local/bin/keskos-start-quickshell"
+    "usr/local/bin/keskos-terminal-shell"
+    "usr/local/bin/keskos-wallpaper-apply"
+    "usr/local/bin/keskos-workspace"
+    "usr/share/applications/install-keskos-debug.desktop"
+    "usr/share/applications/install-keskos.desktop"
+    "usr/share/applications/keskos-first-run.desktop"
+    "usr/share/keskos/browser-themes"
+    "usr/share/keskos/first-run/browser-theme"
+    "usr/share/keskos/installer/package-manifest.json"
+    "usr/share/polkit-1/actions/org.keskos.settings.policy"
+  )
+  local relative_path=""
 
-  rm -rf \
-    "${root}/usr/share/keskos/browser-home" \
-    "${root}/usr/share/keskos/startpage" \
-    "${root}/usr/share/calamares/branding/keskos" \
-    "${root}/etc/calamares/modules"
+  log "Pruning staged airootfs files that are now provided by KeskOS packages..."
 
-  mkdir -p \
-    "${root}/usr/bin" \
-    "${root}/usr/share/konsole" \
-    "${root}/usr/share/color-schemes" \
-    "${root}/usr/share/icons/hicolor/48x48/apps" \
-    "${root}/usr/share/icons/hicolor/64x64/apps" \
-    "${root}/usr/share/icons/hicolor/128x128/apps" \
-    "${root}/usr/share/plasma/desktoptheme" \
-    "${root}/usr/share/aurorae/themes" \
-    "${root}/usr/share/kwin/decorations" \
-    "${root}/usr/share/backgrounds/keskos" \
-    "${root}/usr/share/plasma/plasmoids" \
-    "${root}/usr/share/plasma/layout-templates" \
-    "${root}/usr/share/plasma/look-and-feel/com.keskos.desktop" \
-    "${root}/usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen/assets" \
-    "${root}/usr/share/sddm/themes/keskos/assets" \
-    "${root}/usr/share/keskos/browser-home" \
-    "${root}/usr/share/keskos/panel-icons" \
-    "${root}/usr/share/keskos/startpage" \
-    "${root}/usr/share/calamares/branding/keskos" \
-    "${root}/etc/calamares/modules"
-
-  install -m 644 "${REPO_ROOT}/configs/konsole/KeskOS.colorscheme" "${root}/usr/share/konsole/KeskOS.colorscheme"
-  install -m 644 "${REPO_ROOT}/configs/konsole/KeskOS.profile" "${root}/usr/share/konsole/KeskOS.profile"
-  install -m 644 "${REPO_ROOT}/configs/kde/keskos.colors" "${root}/usr/share/color-schemes/KESKOS.colors"
-  cp -a "${REPO_ROOT}/configs/plasma/desktoptheme/keskos-shell" "${root}/usr/share/plasma/desktoptheme/"
-  cp -a "${REPO_ROOT}/configs/aurorae/themes/KeskOS-SPLIT" "${root}/usr/share/aurorae/themes/"
-  cp -a "${REPO_ROOT}/configs/kwin/decorations/kwin4_decoration_qml_keskos_split" "${root}/usr/share/kwin/decorations/"
-
-  install -m 644 "${REPO_ROOT}/assets/wallpaper.jpg" "${root}/usr/share/backgrounds/keskos/wallpaper.jpg"
-  install -m 644 "${REPO_ROOT}/assets/wallpaper.svg" "${root}/usr/share/backgrounds/keskos/wallpaper.svg"
-  install -m 644 "${REPO_ROOT}/assets/wallpaper-1920x1080.png" "${root}/usr/share/backgrounds/keskos/wallpaper-1920x1080.png"
-  install -m 644 "${REPO_ROOT}/assets/wallpaper-2560x1440.png" "${root}/usr/share/backgrounds/keskos/wallpaper-2560x1440.png"
-  install -m 644 "${REPO_ROOT}/assets/wallpaper-4096x2160.png" "${root}/usr/share/backgrounds/keskos/wallpaper-4096x2160.png"
-  install -m 644 "${REPO_ROOT}/assets/kesk_os_logo_text.png" "${root}/usr/share/backgrounds/keskos/kesk_os_logo_text.png"
-
-  install -m 644 "${REPO_ROOT}/assets/icons/hicolor/48x48/apps/keskos-launcher.png" "${root}/usr/share/icons/hicolor/48x48/apps/keskos-launcher.png"
-  install -m 644 "${REPO_ROOT}/assets/icons/hicolor/64x64/apps/keskos-launcher.png" "${root}/usr/share/icons/hicolor/64x64/apps/keskos-launcher.png"
-  install -m 644 "${REPO_ROOT}/assets/icons/hicolor/128x128/apps/keskos-launcher.png" "${root}/usr/share/icons/hicolor/128x128/apps/keskos-launcher.png"
-  install -m 644 "${REPO_ROOT}/assets/panel-icons/browser.svg" "${root}/usr/share/keskos/panel-icons/browser.svg"
-  install -m 644 "${REPO_ROOT}/assets/panel-icons/folder.svg" "${root}/usr/share/keskos/panel-icons/folder.svg"
-  install -m 644 "${REPO_ROOT}/assets/panel-icons/settings.svg" "${root}/usr/share/keskos/panel-icons/settings.svg"
-  install -m 644 "${REPO_ROOT}/assets/panel-icons/terminal.svg" "${root}/usr/share/keskos/panel-icons/terminal.svg"
-  cp -a "${REPO_ROOT}/configs/plasmoids/org.kde.plasma.simplekickoff" "${root}/usr/share/plasma/plasmoids/"
-  cp -a "${REPO_ROOT}/configs/plasmoids/com.keskos.workspaceswitcher" "${root}/usr/share/plasma/plasmoids/"
-  cp -a "${REPO_ROOT}/configs/plasma/layout-templates/org.keskos.plasma.defaultPanel" "${root}/usr/share/plasma/layout-templates/"
-  cp -a "${REPO_ROOT}/configs/look-and-feel/com.keskos.desktop/." "${root}/usr/share/plasma/look-and-feel/com.keskos.desktop/"
-  install -m 644 "${REPO_ROOT}/configs/look-and-feel/com.keskos.desktop/contents/lockscreen/assets/background.png" "${root}/usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen/assets/background.png"
-  install -m 644 "${REPO_ROOT}/configs/look-and-feel/com.keskos.desktop/contents/lockscreen/assets/logo.png" "${root}/usr/share/plasma/shells/org.kde.plasma.desktop/contents/lockscreen/assets/logo.png"
-
-  install -m 644 "${REPO_ROOT}/configs/sddm/keskos/Main.qml" "${root}/usr/share/sddm/themes/keskos/Main.qml"
-  install -m 644 "${REPO_ROOT}/configs/sddm/keskos/metadata.desktop" "${root}/usr/share/sddm/themes/keskos/metadata.desktop"
-  install -m 644 "${REPO_ROOT}/configs/sddm/keskos/theme.conf" "${root}/usr/share/sddm/themes/keskos/theme.conf"
-  install -m 644 "${REPO_ROOT}/assets/wallpaper-2560x1440.png" "${root}/usr/share/sddm/themes/keskos/assets/background.png"
-  install -m 644 "${REPO_ROOT}/assets/kesk_os_logo_text.png" "${root}/usr/share/sddm/themes/keskos/assets/logo.png"
-
-  cp -a "${REPO_ROOT}/browser-home/." "${root}/usr/share/keskos/browser-home/"
-  cp -a "${REPO_ROOT}/browser-home/." "${root}/usr/share/keskos/startpage/"
-
-  install -m 644 "${REPO_ROOT}/calamares/settings.conf" "${root}/etc/calamares/settings.conf"
-  cp -a "${REPO_ROOT}/calamares/modules/." "${root}/etc/calamares/modules/"
-  cp -a "${REPO_ROOT}/calamares/branding/keskos/." "${root}/usr/share/calamares/branding/keskos/"
-}
-
-stage_application_entries() {
-  local root="${STAGE_DIR}/airootfs"
-  mkdir -p "${root}/usr/share/applications" "${root}/etc/skel/Desktop"
-
-  cp -a "${REPO_ROOT}/desktop/." "${root}/usr/share/applications/"
-  install -m 644 "${REPO_ROOT}/airootfs/usr/share/applications/install-keskos.desktop" "${root}/usr/share/applications/install-keskos.desktop"
-  install -m 755 "${REPO_ROOT}/airootfs/etc/skel/Desktop/Install KeskOS.desktop" "${root}/etc/skel/Desktop/Install KeskOS.desktop"
+  for relative_path in "${migrated_paths[@]}"; do
+    rm -rf "${root}/${relative_path}"
+  done
 }
 
 stage_boot_branding() {
@@ -566,42 +1442,85 @@ stage_boot_branding() {
 }
 
 run_mkarchiso() {
+  local -a sudo_env=()
+  local returncode=0
+  validate_generated_pacman_conf
   log "Building the KeskOS ISO with mkarchiso..."
-  sudo mkarchiso \
+  build_sudo_env sudo_env
+  if sudo env "${sudo_env[@]}" mkarchiso \
     -v \
     -C "${GENERATED_PACMAN_CONF}" \
     -w "${ARCHISO_WORK_DIR}" \
     -o "${OUT_DIR}" \
-    "${STAGE_DIR}"
+    "${STAGE_DIR}"; then
+    returncode=0
+  else
+    returncode=$?
+  fi
   restore_build_root_ownership
+  return "$returncode"
 }
 
 main() {
+  local package_name=""
+
   parse_args "$@"
+  configure_optional_builds
   check_arch_host
+  validate_repo_inputs
+  validate_packages_seed
+  validate_local_override_sources
   check_dependencies
   if (( EUID == 0 )); then
     fail "Run build.sh as a regular user. The script will call sudo only for mkarchiso."
   fi
 
-  configure_local_package_mode
+  print_build_mode_summary
 
+  run_keskos_repo_preflight
   prepare_workdirs
+  trap restore_build_root_ownership EXIT
+  import_local_repo_packages
 
-  for package_name in "${AUR_PACKAGES[@]}"; do
-    build_aur_package "$package_name"
-  done
+  if (( CHECK_ONLY )) && local_builds_requested; then
+    log "Check-only mode: skipping local override builds."
+  else
+    for package_name in "${REPO_PACKAGES[@]}"; do
+      build_repo_package "$package_name"
+    done
 
-  stage_local_package_archives
+    for package_name in "${AUR_PACKAGES[@]}"; do
+      build_aur_package "$package_name"
+    done
 
-  refresh_local_repo
+    for package_name in "${LOCAL_PACKAGES[@]}"; do
+      build_local_package "$package_name"
+    done
+  fi
+
+  if local_repo_has_packages; then
+    refresh_local_repo
+  else
+    log "No local package overrides were staged for this build."
+  fi
   generate_pacman_conf
+  preflight_repo_sync
+  validate_required_packages_in_generated_conf
+  validate_seed_packages_in_generated_conf
   stage_profile_basics
-  stage_source_tree
-  stage_live_system_assets
-  stage_application_entries
+  prune_packaged_live_overlays
   stage_boot_branding
+
+  if (( CHECK_ONLY )); then
+    log "Check-only validation complete."
+    trap - EXIT
+    restore_build_root_ownership
+    return 0
+  fi
+
   run_mkarchiso
+  trap - EXIT
+  restore_build_root_ownership
 
   log "KeskOS ISO build complete."
   log "Output directory: ${OUT_DIR}"
